@@ -53,11 +53,12 @@ private val corePermissions = buildList {
 private fun ProductionRoot() {
     val context = LocalContext.current
     val tracker = remember { StepTracker(context) }
-    val store = remember { StepDataStore(context) }
+    val stepStore = remember { StepDataStore(context) }
+    val workoutStore = remember { WorkoutStore(context) }
     var screen by rememberSaveable { mutableStateOf("home") }
     var onboarding by rememberSaveable { mutableStateOf(false) }
     var permissionsChecked by rememberSaveable { mutableStateOf(false) }
-    var todaySteps by remember { mutableIntStateOf(store.todaySteps()) }
+    var todaySteps by remember { mutableIntStateOf(stepStore.todaySteps()) }
 
     DisposableEffect(tracker) {
         onDispose { tracker.release() }
@@ -85,7 +86,7 @@ private fun ProductionRoot() {
     LaunchedEffect(permissionsChecked) {
         if (!permissionsChecked) return@LaunchedEffect
         while (true) {
-            todaySteps = store.todaySteps()
+            todaySteps = stepStore.todaySteps()
             delay(1000)
         }
     }
@@ -148,13 +149,11 @@ private fun ProductionRoot() {
         ) { padding ->
             Box(Modifier.padding(padding)) {
                 when (screen) {
-                    "home" -> HomeScreen(
-                        steps = todaySteps,
-                        onStart = { screen = "live" }
-                    )
-                    "live" -> LiveTrackingScreen(
+                    "home" -> HomeScreen(steps = todaySteps, onStart = { screen = "live" })
+                    "live" -> Phase1LiveScreen(
                         tracker = tracker,
-                        onFinish = {
+                        onFinish = { steps, duration ->
+                            workoutStore.saveStepSession(steps, duration)
                             tracker.stop()
                             screen = "home"
                         }
@@ -179,8 +178,10 @@ private fun startStepServiceIfAllowed(context: android.content.Context) {
         ) != PackageManager.PERMISSION_GRANTED
     ) return
 
-    val intent = Intent(context, StepCountingService::class.java)
-    ContextCompat.startForegroundService(context, intent)
+    ContextCompat.startForegroundService(
+        context,
+        Intent(context, StepCountingService::class.java)
+    )
 }
 
 @Composable
