@@ -6,6 +6,14 @@ on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Android build type'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+          - debug
 
 permissions:
   contents: read
