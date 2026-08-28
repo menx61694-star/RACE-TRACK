@@ -34,6 +34,7 @@ class LocationTracker(private val context: Context) : LocationListener {
         val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         if (!fine && !coarse) return
+
         callback = onUpdate
         active = true
         lastLocation = null
@@ -41,15 +42,18 @@ class LocationTracker(private val context: Context) : LocationListener {
         elapsedSeconds = 0L
         routePoints.clear()
         snapshot = Snapshot()
-        listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-            .filter { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
-            .forEach { manager.requestLocationUpdates(it, 1000L, 2f, this) }
+
+        // GPS is preferred for fitness tracking. Requesting GPS + network together can
+        // double-count segments when the providers report the same movement differently.
+        val gpsEnabled = runCatching { manager.isProviderEnabled(LocationManager.GPS_PROVIDER) }.getOrDefault(false)
+        val provider = if (gpsEnabled) LocationManager.GPS_PROVIDER else LocationManager.NETWORK_PROVIDER
+        manager.requestLocationUpdates(provider, 1000L, 3f, this)
     }
 
     fun addElapsedSeconds(seconds: Long) {
         if (!active) return
         elapsedSeconds = max(0L, seconds)
-        publish(lastLocation?.speed ?: 0f)
+        publish(lastLocation?.speed?.coerceAtLeast(0f) ?: 0f)
     }
 
     fun stop() {
@@ -60,15 +64,35 @@ class LocationTracker(private val context: Context) : LocationListener {
 
     override fun onLocationChanged(location: Location) {
         if (!active) return
-        if (location.accuracy > 50f) return
+        if (location.accuracy > 35f) return
+        if (location.isFromMockProvider) return
+
         val previous = lastLocation
         if (previous != null) {
             val segment = previous.distanceTo(location)
-            if (segment >= 1f) totalMeters += segment
+            val dtSeconds = (location.elapsedRealtimeNanos - previous.elapsedRealtimeNanos) / 1_000_000_000f
+            if (dtSeconds <= 0f || dtSeconds > 15f) {
+                lastLocation = location
+                return
+            }
+
+            // Reject GPS jitter and impossible jumps. The threshold scales with the
+            // reported accuracy, while the upper bound prevents teleport-like spikes.
+            val noiseThreshold = max(3f, (previous.accuracy + location.accuracy) * 0.25f)
+            val maxReasonable = max(35f, dtSeconds * 8f)
+            if (segment < noiseThreshold || segment > maxReasonable) return
+            totalMeters += segment
         }
-        lastLocation = location
+
+        lastLocation = Location(location)
         routePoints.add(Location(location))
-        publish(location.speed.coerceAtLeast(0f))
+        val speed = if (location.hasSpeed() && location.speed >= 0f) {
+            location.speed
+        } else if (previous != null) {
+            val dt = (location.elapsedRealtimeNanos - previous.elapsedRealtimeNanos) / 1_000_000_000f
+            if (dt > 0f) previous.distanceTo(location) / dt else 0f
+        } else 0f
+        publish(speed.coerceAtLeast(0f))
     }
 
     private fun publish(speed: Float) {
