@@ -10,7 +10,7 @@ import android.location.LocationManager
 import androidx.core.content.ContextCompat
 import kotlin.math.max
 
-class LocationTracker(context: Context) : LocationListener {
+class LocationTracker(private val context: Context) : LocationListener {
     data class Snapshot(
         val distanceMeters: Float = 0f,
         val currentSpeedMps: Float = 0f,
@@ -24,24 +24,26 @@ class LocationTracker(context: Context) : LocationListener {
     private var totalMeters = 0f
     private var elapsedSeconds = 0L
     private var callback: ((Snapshot) -> Unit)? = null
+    private val routePoints = mutableListOf<Location>()
 
     var snapshot: Snapshot = Snapshot()
         private set
 
     @SuppressLint("MissingPermission")
     fun start(onUpdate: (Snapshot) -> Unit) {
-        if (ContextCompat.checkSelfPermission(context(), Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
-            ContextCompat.checkSelfPermission(context(), Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) return
+        val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!fine && !coarse) return
         callback = onUpdate
         active = true
         lastLocation = null
         totalMeters = 0f
         elapsedSeconds = 0L
+        routePoints.clear()
         snapshot = Snapshot()
-        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-        providers.filter { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }.forEach { provider ->
-            manager.requestLocationUpdates(provider, 1000L, 2f, this)
-        }
+        listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+            .filter { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
+            .forEach { manager.requestLocationUpdates(it, 1000L, 2f, this) }
     }
 
     fun addElapsedSeconds(seconds: Long) {
@@ -58,23 +60,21 @@ class LocationTracker(context: Context) : LocationListener {
 
     override fun onLocationChanged(location: Location) {
         if (!active) return
+        if (location.accuracy > 50f) return
         val previous = lastLocation
         if (previous != null) {
             val segment = previous.distanceTo(location)
-            if (segment >= 1f && location.accuracy <= 50f) totalMeters += segment
+            if (segment >= 1f) totalMeters += segment
         }
         lastLocation = location
+        routePoints.add(Location(location))
         publish(location.speed.coerceAtLeast(0f))
     }
 
     private fun publish(speed: Float) {
         val average = if (elapsedSeconds > 0) totalMeters / elapsedSeconds else 0f
-        snapshot = Snapshot(totalMeters, speed, average, buildList { lastLocation?.let { add(it) } })
+        snapshot = Snapshot(totalMeters, speed, average, routePoints.toList())
         callback?.invoke(snapshot)
-    }
-
-    private fun context(): Context = manager.javaClass.let { // context is not exposed by LocationManager; permission is checked before construction by caller.
-        throw IllegalStateException("LocationTracker.start must be called only after location permission is granted")
     }
 
     override fun onProviderEnabled(provider: String) = Unit
