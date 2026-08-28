@@ -6,6 +6,7 @@ on:
       - main
       - feature/core-tracking
       - feature/map-integration
+      - fix/icon-build-e4fba63
   pull_request:
     branches: [ main ]
   workflow_dispatch:
