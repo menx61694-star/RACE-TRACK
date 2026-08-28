@@ -14,8 +14,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.width as foundationWidth
 
-/** Shared MetricCard for Phase 2 screens. */
 @Composable
 fun MetricCard(
     icon: String,
@@ -35,7 +35,7 @@ fun MetricCard(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(icon, fontSize = 19.sp)
-                Spacer(Modifier.width(7.dp))
+                Spacer(Modifier.foundationWidth(7.dp))
                 Text(title, color = Muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
                 if (action != null) Text(action, color = Green)
             }
@@ -44,5 +44,4 @@ fun MetricCard(
     }
 }
 
-/** Package-local compatibility wrapper for screens that use Modifier.width without importing it. */
-fun Modifier.width(value: Dp): Modifier = androidx.compose.foundation.layout.width(this, value)
+fun Modifier.width(value: Dp): Modifier = this.foundationWidth(value)
