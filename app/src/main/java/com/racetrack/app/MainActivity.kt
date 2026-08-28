@@ -33,13 +33,6 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 
-private val Green = Color(0xFF00E676)
-private val Cyan = Color(0xFF00B0FF)
-private val Coral = Color(0xFFFF5252)
-private val Charcoal = Color(0xFF121212)
-private val Card = Color(0xFF1E1E1E)
-private val Muted = Color(0xFF9E9E9E)
-
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -68,10 +61,10 @@ fun RaceTrackApp() {
                 containerColor = Charcoal,
                 bottomBar = {
                     if (screen != "live" && screen != "settings") NavigationBar(containerColor = Card) {
-                        NavItem("home", Icons.Default.Home, "Home", screen) { screen = it }
-                        NavItem("analytics", Icons.Default.BarChart, "Stats", screen) { screen = it }
-                        NavItem("community", Icons.Default.EmojiEvents, "Community", screen) { screen = it }
-                        NavItem("profile", Icons.Default.Person, "Profile", screen) { screen = it }
+                        NavItem("home", Icons.Default.Home, "Home", screen) { selected -> screen = selected }
+                        NavItem("analytics", Icons.Default.BarChart, "Stats", screen) { selected -> screen = selected }
+                        NavItem("community", Icons.Default.EmojiEvents, "Community", screen) { selected -> screen = selected }
+                        NavItem("profile", Icons.Default.Person, "Profile", screen) { selected -> screen = selected }
                     }
                 }
             ) { padding ->
@@ -92,11 +85,6 @@ fun RaceTrackApp() {
             }
         }
     }
-}
-
-@Composable
-private fun RowScope.NavItem(key: String, icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, selected: String, onSelect: (String) -> Unit) {
-    NavigationBarItem(selected = selected == key, onClick = { onSelect(key) }, icon = { Icon(icon, label) }, label = { Text(label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = Green, selectedTextColor = Green, indicatorColor = Color.Transparent))
 }
 
 @Composable
@@ -145,7 +133,7 @@ private fun MetricCard(icon: String, title: String, value: String, modifier: Mod
 @Composable
 private fun WeeklyCard() {
     Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Card), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(18.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("This week", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp); Text("0 steps", color = Green, fontWeight = FontWeight.Bold) }; Spacer(Modifier.height(18.dp)); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.Bottom) { listOf(0,0,0,0,0,0,0).forEachIndexed { index,h -> Column(horizontalAlignment = Alignment.CenterHorizontally) { Box(Modifier.width(22.dp).height(8.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF303030))); Spacer(Modifier.height(7.dp)); Text(listOf("M","T","W","T","F","S","S")[index], color=Muted, fontSize=11.sp) } } } }
+        Column(Modifier.padding(18.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("This week", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp); Text("0 steps", color = Green, fontWeight = FontWeight.Bold) }; Spacer(Modifier.height(18.dp)); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.Bottom) { listOf(0,0,0,0,0,0,0).forEachIndexed { index,_ -> Column(horizontalAlignment = Alignment.CenterHorizontally) { Box(Modifier.width(22.dp).height(8.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF303030))); Spacer(Modifier.height(7.dp)); Text(listOf("M","T","W","T","F","S","S")[index], color=Muted, fontSize=11.sp) } } } }
     }
 }
 
