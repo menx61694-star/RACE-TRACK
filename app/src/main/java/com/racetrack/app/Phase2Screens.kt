@@ -1,8 +1,7 @@
 package com.racetrack.app
 
+import android.graphics.Color as AndroidColor
 import android.location.Location
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -55,6 +54,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
+import org.maplibre.android.MapLibre
+import org.maplibre.android.camera.CameraPosition
+import org.maplibre.android.camera.CameraUpdateFactory
+import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.MapView
+import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.PropertyFactory.circleColor
+import org.maplibre.android.style.layers.PropertyFactory.circleRadius
+import org.maplibre.android.style.layers.PropertyFactory.lineColor
+import org.maplibre.android.style.layers.PropertyFactory.lineWidth
+import org.maplibre.android.style.sources.GeoJsonSource
+import com.mapbox.geojson.LineString
+import com.mapbox.geojson.Point
+import com.mapbox.geojson.Feature
 
 @Composable
 fun Phase2HomeScreen(
@@ -133,31 +148,78 @@ fun Phase2LiveScreen(profile: ProfileStore, tracker: StepTracker, onFinish: (Int
 
 @Composable
 private fun RouteMap(route: List<Location>) {
-    AndroidView(factory = { context ->
-        WebView(context).apply {
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            webViewClient = WebViewClient()
-            loadDataWithBaseURL("https://www.openstreetmap.org/", mapHtml(), "text/html", "UTF-8", null)
+    var mapRef by remember { mutableStateOf<MapLibreMap?>(null) }
+
+    LaunchedEffect(route, mapRef) {
+        val map = mapRef ?: return@LaunchedEffect
+        val style = map.style ?: return@LaunchedEffect
+        val points = route.map { Point.fromLngLat(it.longitude, it.latitude) }
+        if (points.isEmpty()) return@LaunchedEffect
+
+        style.getSourceAs<GeoJsonSource>(ROUTE_SOURCE_ID)?.let { source ->
+            if (points.size >= 2) source.setGeoJson(LineString.fromLngLats(points))
         }
-    }, update = { web ->
-        if (route.isNotEmpty()) {
-            val points = route.joinToString(",") { "[${it.latitude},${it.longitude}]" }
-            web.evaluateJavascript("window.updateRoute([$points]);", null)
+        style.getSourceAs<GeoJsonSource>(POSITION_SOURCE_ID)?.setGeoJson(Feature.fromGeometry(points.last()))
+        val last = LatLng(points.last().latitude(), points.last().longitude())
+        map.animateCamera(CameraUpdateFactory.newLatLng(last))
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        AndroidView(
+            factory = { context ->
+                MapLibre.getInstance(context)
+                MapView(context).also { mapView ->
+                    mapView.onCreate(null)
+                    mapView.onStart()
+                    mapView.onResume()
+                    mapView.getMapAsync { map ->
+                        mapRef = map
+                        map.setStyle("https://tiles.openfreemap.org/styles/liberty") { style ->
+                            style.addSource(GeoJsonSource(ROUTE_SOURCE_ID))
+                            style.addLayer(
+                                LineLayer(ROUTE_LAYER_ID, ROUTE_SOURCE_ID).withProperties(
+                                    lineColor(AndroidColor.rgb(0, 230, 118)),
+                                    lineWidth(5f)
+                                )
+                            )
+                            style.addSource(GeoJsonSource(POSITION_SOURCE_ID))
+                            style.addLayer(
+                                CircleLayer(POSITION_LAYER_ID, POSITION_SOURCE_ID).withProperties(
+                                    circleRadius(7f),
+                                    circleColor(AndroidColor.rgb(0, 230, 118))
+                                )
+                            )
+                            if (route.isNotEmpty()) {
+                                val first = route.first()
+                                map.cameraPosition = CameraPosition.Builder()
+                                    .target(LatLng(first.latitude, first.longitude))
+                                    .zoom(17.0)
+                                    .build()
+                            }
+                        }
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+        Text(
+            "© OpenStreetMap contributors • OpenFreeMap",
+            color = Color.White.copy(alpha = 0.75f),
+            fontSize = 9.sp,
+            modifier = Modifier.align(Alignment.BottomStart).padding(8.dp)
+        )
+        DisposableEffect(Unit) {
+            onDispose {
+                // MapView lifecycle is managed by the Compose view owner.
+            }
         }
-    }, modifier = Modifier.fillMaxSize())
+    }
 }
 
-private fun mapHtml() = """
-<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1.0'>
-<link rel='stylesheet' href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'/>
-<style>html,body,#map{height:100%;margin:0;background:#121212}</style></head><body><div id='map'></div>
-<script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'></script><script>
-const map=L.map('map').setView([20.5937,78.9629],5); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
-let line=L.polyline([],{color:'#00E676',weight:6}).addTo(map); let marker=null;
-window.updateRoute=function(points){if(!points.length)return;line.setLatLngs(points); if(marker)map.removeLayer(marker); marker=L.circleMarker(points[points.length-1],{radius:7,color:'#00B0FF',fillColor:'#00E676',fillOpacity:1}).addTo(map); map.fitBounds(line.getBounds(),{padding:[30,30],maxZoom:17});};
-</script></body></html>
-"""
+private const val ROUTE_SOURCE_ID = "racetrack-route-source"
+private const val ROUTE_LAYER_ID = "racetrack-route-layer"
+private const val POSITION_SOURCE_ID = "racetrack-position-source"
+private const val POSITION_LAYER_ID = "racetrack-position-layer"
 
 @Composable
 private fun LiveMetric(label: String, value: String) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Text(value, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp); Text(label, color = Muted, fontSize = 10.sp) } }
