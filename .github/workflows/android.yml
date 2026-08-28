@@ -2,7 +2,10 @@ name: Android Build
 
 on:
   push:
-    branches: [ main, feature/core-tracking ]
+    branches:
+      - main
+      - feature/core-tracking
+      - feature/map-integration
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -64,5 +67,3 @@ jobs:
           name: race-track-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-
-# Clean-build trigger after restoring the production screen sources.
