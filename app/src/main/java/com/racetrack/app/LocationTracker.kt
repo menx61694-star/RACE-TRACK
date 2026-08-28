@@ -7,14 +7,14 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
-import androidx.core.content.ContextCompat
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.ContextCompat
 
 /** Foreground location tracker. Distance is accumulated only from usable GPS fixes. */
-class LocationTracker(context: Context) : LocationListener {
+class LocationTracker(private val context: Context) : LocationListener {
     private val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
     var distanceMeters by mutableDoubleStateOf(0.0)
@@ -30,7 +30,7 @@ class LocationTracker(context: Context) : LocationListener {
 
     @SuppressLint("MissingPermission")
     fun start() {
-        if (!hasPermission(context)) return
+        if (!hasPermission()) return
         stop()
         distanceMeters = 0.0
         speedMps = 0.0
@@ -72,7 +72,7 @@ class LocationTracker(context: Context) : LocationListener {
         if (provider == LocationManager.GPS_PROVIDER) gpsAvailable = false
     }
 
-    private fun hasPermission(context: Context): Boolean =
+    private fun hasPermission(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 }
