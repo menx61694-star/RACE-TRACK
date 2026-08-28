@@ -3,6 +3,7 @@ package com.racetrack.app
 import android.location.Location
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -43,6 +44,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,14 +57,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
+import java.util.concurrent.atomic.AtomicBoolean
 
 @Composable
-fun Phase2HomeScreen(
-    steps: Int,
-    profile: ProfileStore,
-    workoutStore: WorkoutStore,
-    onStart: () -> Unit
-) {
+fun Phase2HomeScreen(steps: Int, profile: ProfileStore, workoutStore: WorkoutStore, onStart: () -> Unit) {
     val today = workoutStore.forRange(startOfDay(), startOfDay() + DAY_MS)
     val distance = today.sumOf { it.distanceMeters.toDouble() }.toFloat()
     val calories = today.sumOf { it.calories.toDouble() }.toFloat()
@@ -92,13 +90,20 @@ fun Phase2HomeScreen(
 fun Phase2LiveScreen(profile: ProfileStore, tracker: StepTracker, onFinish: (Int, Long, Float, Float) -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val location = remember { LocationTracker(context) }
+    val workoutStore = remember { WorkoutStore(context) }
     var elapsed by remember { mutableLongStateOf(0L) }
     var running by remember { mutableStateOf(true) }
     var distance by remember { mutableFloatStateOf(0f) }
     var speed by remember { mutableFloatStateOf(0f) }
     var route by remember { mutableStateOf<List<Location>>(emptyList()) }
     var activity by remember { mutableStateOf("Walk") }
+    val sessionFinalized = remember { AtomicBoolean(false) }
     val weight = profile.weightKg.coerceAtLeast(1f)
+    val latestSteps by rememberUpdatedState(tracker.steps)
+    val latestElapsed by rememberUpdatedState(elapsed)
+    val latestDistance by rememberUpdatedState(distance)
+    val latestCalories by rememberUpdatedState((if (activity == "Run") 7.0 else 3.5) * 3.5 * weight / 200.0 * (elapsed / 60.0))
+    val latestActivity by rememberUpdatedState(activity)
 
     LaunchedEffect(Unit) {
         tracker.start()
@@ -109,7 +114,22 @@ fun Phase2LiveScreen(profile: ProfileStore, tracker: StepTracker, onFinish: (Int
         }
         while (true) { delay(1000); if (running) { elapsed++; location.addElapsedSeconds(elapsed) } }
     }
-    DisposableEffect(Unit) { onDispose { tracker.stop(); location.stop() } }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            tracker.stop()
+            location.stop()
+            if (sessionFinalized.compareAndSet(false, true)) {
+                workoutStore.saveSession(latestSteps, latestElapsed, latestDistance, latestCalories.toFloat(), latestActivity)
+            }
+        }
+    }
+
+    BackHandler {
+        if (sessionFinalized.compareAndSet(false, true)) {
+            onFinish(latestSteps, latestElapsed, latestDistance, latestCalories.toFloat())
+        }
+    }
 
     val met = if (activity == "Run") 7.0 else 3.5
     val calories = (met * 3.5 * weight / 200.0 * (elapsed / 60.0)).toFloat()
@@ -124,7 +144,7 @@ fun Phase2LiveScreen(profile: ProfileStore, tracker: StepTracker, onFinish: (Int
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { LiveMetric("Steps", tracker.steps.toString()); LiveMetric("Distance", "%.2f km".format(distance / 1000f)); LiveMetric("Pace", if (pace > 0) "%d:%02d /km".format((pace / 60).toInt(), (pace % 60).toInt()) else "—"); LiveMetric("Calories", "${calories.roundToInt()} kcal") }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                     OutlinedButton(onClick = { if (running) { tracker.pause(); running = false } else { tracker.resume(); running = true } }, modifier = Modifier.weight(1f).height(52.dp), shape = CircleShape) { Icon(if (running) Icons.Default.Stop else Icons.Default.PlayArrow, null); Spacer(Modifier.size(6.dp)); Text(if (running) "Pause" else "Resume") }
-                    Button(onClick = { onFinish(tracker.steps, elapsed, distance, calories) }, modifier = Modifier.weight(1f).height(52.dp), shape = CircleShape, colors = ButtonDefaults.buttonColors(containerColor = Coral)) { Icon(Icons.Default.Stop, null); Spacer(Modifier.size(6.dp)); Text("Finish") }
+                    Button(onClick = { sessionFinalized.set(true); onFinish(tracker.steps, elapsed, distance, calories) }, modifier = Modifier.weight(1f).height(52.dp), shape = CircleShape, colors = ButtonDefaults.buttonColors(containerColor = Coral)) { Icon(Icons.Default.Stop, null); Spacer(Modifier.size(6.dp)); Text("Finish") }
                 }
             }
         }
@@ -133,15 +153,26 @@ fun Phase2LiveScreen(profile: ProfileStore, tracker: StepTracker, onFinish: (Int
 
 @Composable
 private fun RouteMap(route: List<Location>) {
+    var pageReady by remember { mutableStateOf(false) }
+    val latestRoute by rememberUpdatedState(route)
     AndroidView(factory = { context ->
         WebView(context).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
-            webViewClient = WebViewClient()
+            settings.loadsImagesAutomatically = true
+            settings.allowFileAccess = true
+            settings.allowContentAccess = true
+            webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    pageReady = true
+                    val points = latestRoute.joinToString(",") { "[${it.latitude},${it.longitude}]" }
+                    if (points.isNotEmpty()) view?.evaluateJavascript("window.updateRoute([$points]);", null)
+                }
+            }
             loadDataWithBaseURL("https://www.openstreetmap.org/", mapHtml(), "text/html", "UTF-8", null)
         }
     }, update = { web ->
-        if (route.isNotEmpty()) {
+        if (pageReady && route.isNotEmpty()) {
             val points = route.joinToString(",") { "[${it.latitude},${it.longitude}]" }
             web.evaluateJavascript("window.updateRoute([$points]);", null)
         }
@@ -151,11 +182,12 @@ private fun RouteMap(route: List<Location>) {
 private fun mapHtml() = """
 <!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1.0'>
 <link rel='stylesheet' href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'/>
-<style>html,body,#map{height:100%;margin:0;background:#121212}</style></head><body><div id='map'></div>
+<style>html,body,#map{height:100%;width:100%;margin:0;background:#121212}</style></head><body><div id='map'></div>
 <script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'></script><script>
-const map=L.map('map').setView([20.5937,78.9629],5); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
-let line=L.polyline([],{color:'#00E676',weight:6}).addTo(map); let marker=null;
-window.updateRoute=function(points){if(!points.length)return;line.setLatLngs(points); if(marker)map.removeLayer(marker); marker=L.circleMarker(points[points.length-1],{radius:7,color:'#00B0FF',fillColor:'#00E676',fillOpacity:1}).addTo(map); map.fitBounds(line.getBounds(),{padding:[30,30],maxZoom:17});};
+let mapReady=false; let map=null; let line=null; let marker=null;
+function boot(){if(typeof L==='undefined'){setTimeout(boot,250);return;} map=L.map('map',{zoomControl:true}).setView([20.5937,78.9629],5); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map); line=L.polyline([],{color:'#00E676',weight:6}).addTo(map); mapReady=true; setTimeout(function(){map.invalidateSize();},100);}
+window.updateRoute=function(points){if(!mapReady || !points || !points.length)return; line.setLatLngs(points); if(marker)map.removeLayer(marker); marker=L.circleMarker(points[points.length-1],{radius:7,color:'#00B0FF',fillColor:'#00E676',fillOpacity:1}).addTo(map); if(points.length===1){map.setView(points[0],17);}else{map.fitBounds(line.getBounds(),{padding:[30,30],maxZoom:17});} setTimeout(function(){map.invalidateSize();},50);};
+boot();
 </script></body></html>
 """
 
@@ -200,13 +232,34 @@ fun Phase2AnalyticsScreen(stepStore: StepDataStore, workoutStore: WorkoutStore) 
     val days = when (selected) { 0 -> 1; 1 -> 7; 2 -> 30; else -> 365 }
     val values = stepStore.dailyBuckets(days)
     val total = values.sum()
-    val distance = workoutStore.sessions().sumOf { it.distanceMeters.toDouble() }.toFloat()
+    val sessions = workoutStore.sessions()
+    val distance = sessions.sumOf { it.distanceMeters.toDouble() }.toFloat()
     val points = if (selected == 0) values else values.takeLast(if (selected == 1) 7 else 12)
     LazyColumn(Modifier.fillMaxSize().padding(20.dp), contentPadding = PaddingValues(bottom = 110.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { Text("Your Progress", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black) }
         item { Row(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(18.dp)).padding(4.dp), horizontalArrangement = Arrangement.SpaceEvenly) { labels.forEachIndexed { i, label -> FilterChip(selected = selected == i, onClick = { selected = i }, label = { Text(label) }) } } }
         item { Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = Card)) { Column(Modifier.padding(18.dp)) { Text("Steps", color = Muted); Text("%,d".format(total), color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Black); Spacer(Modifier.height(20.dp)); BarChart(points) } } }
         item { Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Card)) { Column(Modifier.padding(18.dp)) { Text("Tracked distance", color = Muted); Text("%.2f km".format(distance / 1000f), color = Cyan, fontSize = 28.sp, fontWeight = FontWeight.Black); Text("Only GPS workout distance is included.", color = Muted, fontSize = 12.sp) } } }
+        item {
+            Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Card)) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Workout history", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    if (sessions.isEmpty()) {
+                        Text("No Walk / Run sessions recorded yet.", color = Muted, fontSize = 13.sp)
+                    } else {
+                        sessions.takeLast(10).reversed().forEach { session ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("${session.activity} • ${workoutStore.formatDate(session.date)}", color = Color.White, fontWeight = FontWeight.Bold)
+                                    Text("${session.steps} steps • %.2f km • ${session.calories.roundToInt()} kcal".format(session.distanceMeters / 1000f), color = Muted, fontSize = 12.sp)
+                                }
+                                Text(formatWorkoutDuration(session.durationSeconds), color = Green, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -216,5 +269,6 @@ private fun BarChart(values: List<Int>) {
     Row(Modifier.fillMaxWidth().height(150.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.Bottom) { values.forEach { value -> Box(Modifier.width(18.dp).height((120f * value / max).coerceAtLeast(4f).dp).background(Green, RoundedCornerShape(8.dp))) } }
 }
 
+private fun formatWorkoutDuration(seconds: Long): String = "%02d:%02d".format(seconds / 60, seconds % 60)
 private const val DAY_MS = 86_400_000L
 private fun startOfDay(): Long { val c = java.util.Calendar.getInstance(); c.set(java.util.Calendar.HOUR_OF_DAY, 0); c.set(java.util.Calendar.MINUTE, 0); c.set(java.util.Calendar.SECOND, 0); c.set(java.util.Calendar.MILLISECOND, 0); return c.timeInMillis }
