@@ -1,6 +1,7 @@
 package com.racetrack.app
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -15,12 +16,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.DirectionsWalk
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -31,9 +30,10 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.delay
 
 class RootActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,20 +42,22 @@ class RootActivity : ComponentActivity() {
     }
 }
 
-private val corePermissions = arrayOf(
-    Manifest.permission.ACTIVITY_RECOGNITION,
-    Manifest.permission.ACCESS_FINE_LOCATION,
-    Manifest.permission.ACCESS_COARSE_LOCATION,
-    Manifest.permission.POST_NOTIFICATIONS
-)
+private val corePermissions = buildList {
+    add(Manifest.permission.ACTIVITY_RECOGNITION)
+    add(Manifest.permission.ACCESS_FINE_LOCATION)
+    add(Manifest.permission.ACCESS_COARSE_LOCATION)
+    if (android.os.Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
+}
 
 @Composable
 private fun ProductionRoot() {
     val context = LocalContext.current
     val tracker = remember { StepTracker(context) }
+    val store = remember { StepDataStore(context) }
     var screen by rememberSaveable { mutableStateOf("home") }
     var onboarding by rememberSaveable { mutableStateOf(false) }
     var permissionsChecked by rememberSaveable { mutableStateOf(false) }
+    var todaySteps by remember { mutableIntStateOf(store.todaySteps()) }
 
     DisposableEffect(tracker) {
         onDispose { tracker.release() }
@@ -65,6 +67,7 @@ private fun ProductionRoot() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
         permissionsChecked = true
+        startStepServiceIfAllowed(context)
     }
 
     LaunchedEffect(Unit) {
@@ -75,6 +78,15 @@ private fun ProductionRoot() {
             permissionLauncher.launch(missing.toTypedArray())
         } else {
             permissionsChecked = true
+            startStepServiceIfAllowed(context)
+        }
+    }
+
+    LaunchedEffect(permissionsChecked) {
+        if (!permissionsChecked) return@LaunchedEffect
+        while (true) {
+            todaySteps = store.todaySteps()
+            delay(1000)
         }
     }
 
@@ -107,7 +119,10 @@ private fun ProductionRoot() {
                         ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED
                     }
                     if (missing.isNotEmpty()) permissionLauncher.launch(missing.toTypedArray())
-                    else permissionsChecked = true
+                    else {
+                        permissionsChecked = true
+                        startStepServiceIfAllowed(context)
+                    }
                 }
             )
             return@MaterialTheme
@@ -134,6 +149,7 @@ private fun ProductionRoot() {
             Box(Modifier.padding(padding)) {
                 when (screen) {
                     "home" -> HomeScreen(
+                        steps = todaySteps,
                         onStart = { screen = "live" }
                     )
                     "live" -> LiveTrackingScreen(
@@ -154,6 +170,17 @@ private fun ProductionRoot() {
             }
         }
     }
+}
+
+private fun startStepServiceIfAllowed(context: android.content.Context) {
+    if (ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACTIVITY_RECOGNITION
+        ) != PackageManager.PERMISSION_GRANTED
+    ) return
+
+    val intent = Intent(context, StepCountingService::class.java)
+    ContextCompat.startForegroundService(context, intent)
 }
 
 @Composable
