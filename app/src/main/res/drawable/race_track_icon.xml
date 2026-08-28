@@ -1,17 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="512" android:viewportHeight="512">
-    <path android:fillColor="#FFFFFF" android:pathData="M64,0 L448,0 Q512,0 512,64 L512,448 Q512,512 448,512 L64,512 Q0,512 0,448 L0,64 Q0,0 64,0 Z"/>
-    <path android:fillColor="#5B2AA8" android:pathData="M116,350 C75,245 116,126 226,92 C306,67 390,96 432,162 C449,188 459,220 462,253 L416,258 C410,209 384,169 346,145 C304,118 253,113 209,130 C133,159 107,240 157,319 Z"/>
-    <path android:fillColor="#D800C8" android:pathData="M93,348 C59,253 84,151 161,100 C218,62 292,55 356,83 L334,123 C283,101 226,105 183,134 C125,174 111,254 137,324 Z"/>
-    <path android:fillColor="#20C9D8" android:pathData="M129,384 C183,352 232,338 297,338 C360,338 405,320 431,283 C455,248 459,207 449,170 L484,202 C494,246 485,294 455,331 C418,376 362,395 300,396 C238,397 190,408 151,431 Z"/>
-    <path android:fillColor="#00B8E6" android:pathData="M151,431 C194,402 242,389 301,389 C367,389 417,370 450,329 L466,355 C426,402 367,423 300,423 C241,423 196,434 158,457 Z"/>
-    <path android:fillColor="#5B2AA8" android:pathData="M244,172 C258,154 283,145 304,154 C323,162 330,183 322,202 C314,222 291,231 271,223 C250,215 237,192 244,172 Z"/>
-    <path android:fillColor="#D800C8" android:pathData="M244,221 L276,238 L320,226 L350,249 L317,272 L276,266 L254,309 L217,291 L238,253 L212,239 Z"/>
-    <path android:fillColor="#5B2AA8" android:pathData="M254,269 L285,286 L266,333 L229,382 C219,394 200,396 189,386 C178,377 179,360 188,349 L225,304 Z"/>
-    <path android:fillColor="#5B2AA8" android:pathData="M302,271 L334,287 L359,333 L346,354 L318,344 L294,314 Z"/>
-    <path android:fillColor="#D800C8" android:pathData="M421,78 L421,150 L445,169 L469,150 L493,169 L493,78 Z"/>
-    <path android:fillColor="#5B2AA8" android:pathData="M75,398 L157,398 L157,420 L128,420 L128,447 L76,447 Z"/>
-    <path android:fillColor="#D800C8" android:pathData="M157,398 L210,398 L210,420 L157,420 Z"/>
-    <path android:fillColor="#5B2AA8" android:pathData="M320,398 L402,398 L402,420 L374,420 L374,447 L321,447 Z"/>
-    <path android:fillColor="#20C9D8" android:pathData="M401,398 L458,398 L458,420 L401,420 Z"/>
-</vector>
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@drawable/race_track_logo"
+    android:gravity="fill" />
