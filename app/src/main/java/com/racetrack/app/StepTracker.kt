@@ -5,16 +5,18 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 
 /** Session step tracker backed by Android's hardware step counter. */
 class StepTracker(context: Context) : SensorEventListener {
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val stepSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
 
-    var steps: Int = 0
+    var steps by mutableIntStateOf(0)
         private set
-    var isAvailable: Boolean = stepSensor != null
-        private set
+    val isAvailable: Boolean = stepSensor != null
     var isRunning: Boolean = false
         private set
 
