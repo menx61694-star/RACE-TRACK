@@ -34,8 +34,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -147,10 +147,10 @@ private fun ProductionRoot() {
             bottomBar = {
                 if (screen != "live" && screen != "settings") {
                     NavigationBar(containerColor = Card) {
-                        NavItem("home", Icons.Default.Home, "Home", screen) { screen = it }
-                        NavItem("analytics", Icons.Default.BarChart, "Stats", screen) { screen = it }
-                        NavItem("community", Icons.Default.EmojiEvents, "Community", screen) { screen = it }
-                        NavItem("profile", Icons.Default.Person, "Profile", screen) { screen = it }
+                        NavItem("home", Icons.Default.Home, "Home", screen) { selected -> screen = selected }
+                        NavItem("analytics", Icons.Default.BarChart, "Stats", screen) { selected -> screen = selected }
+                        NavItem("community", Icons.Default.EmojiEvents, "Community", screen) { selected -> screen = selected }
+                        NavItem("profile", Icons.Default.Person, "Profile", screen) { selected -> screen = selected }
                     }
                 }
             }
