@@ -64,3 +64,5 @@ jobs:
           name: race-track-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+# Clean-build trigger after restoring the production screen sources.
