@@ -34,6 +34,7 @@ class LocationTracker(private val context: Context) : LocationListener {
         val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         if (!fine && !coarse) return
+
         callback = onUpdate
         active = true
         lastLocation = null
@@ -41,15 +42,21 @@ class LocationTracker(private val context: Context) : LocationListener {
         elapsedSeconds = 0L
         routePoints.clear()
         snapshot = Snapshot()
-        listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-            .filter { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
-            .forEach { manager.requestLocationUpdates(it, 1000L, 2f, this) }
+
+        // Prefer GPS for workout tracking. Network is only a fallback when GPS is unavailable.
+        val gpsEnabled = runCatching { manager.isProviderEnabled(LocationManager.GPS_PROVIDER) }.getOrDefault(false)
+        val networkEnabled = runCatching { manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) }.getOrDefault(false)
+        if (gpsEnabled) {
+            manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 2f, this)
+        } else if (networkEnabled) {
+            manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 2000L, 3f, this)
+        }
     }
 
     fun addElapsedSeconds(seconds: Long) {
         if (!active) return
         elapsedSeconds = max(0L, seconds)
-        publish(lastLocation?.speed ?: 0f)
+        publish(lastLocation?.let { if (it.hasSpeed()) it.speed else 0f } ?: 0f)
     }
 
     fun stop() {
@@ -60,15 +67,27 @@ class LocationTracker(private val context: Context) : LocationListener {
 
     override fun onLocationChanged(location: Location) {
         if (!active) return
-        if (location.accuracy > 50f) return
+
+        // Reject weak fixes. Keeping noisy GPS points makes both distance and the drawn route worse.
+        if (location.accuracy > 40f) return
+
         val previous = lastLocation
         if (previous != null) {
+            val elapsedMs = (location.time - previous.time).coerceAtLeast(1L)
+            val elapsedSecondsBetweenFixes = elapsedMs / 1000f
             val segment = previous.distanceTo(location)
-            if (segment >= 1f) totalMeters += segment
+
+            // Reject impossible jumps caused by GPS/network glitches.
+            val maxReasonableSegment = (14f * elapsedSecondsBetweenFixes + max(previous.accuracy, location.accuracy) * 0.75f).coerceAtLeast(8f)
+            if (segment > maxReasonableSegment) return
+
+            // Ignore tiny GPS jitter instead of accumulating it as walking distance.
+            if (segment >= 2f) totalMeters += segment
         }
-        lastLocation = location
+
+        lastLocation = Location(location)
         routePoints.add(Location(location))
-        publish(location.speed.coerceAtLeast(0f))
+        publish(if (location.hasSpeed()) location.speed.coerceAtLeast(0f) else 0f)
     }
 
     private fun publish(speed: Float) {
