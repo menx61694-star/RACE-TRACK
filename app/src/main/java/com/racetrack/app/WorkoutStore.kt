@@ -12,12 +12,14 @@ class WorkoutStore(context: Context) {
         val steps: Int,
         val durationSeconds: Long,
         val distanceMeters: Float,
-        val calories: Float
+        val calories: Float,
+        val activity: String
     )
 
     private val prefs = context.getSharedPreferences("workouts", Context.MODE_PRIVATE)
 
-    fun saveSession(steps: Int, durationSeconds: Long, distanceMeters: Float, calories: Float) {
+    fun saveSession(steps: Int, durationSeconds: Long, distanceMeters: Float, calories: Float, activity: String = "Walk") {
+        if (durationSeconds <= 0L && steps <= 0 && distanceMeters <= 0f) return
         val count = prefs.getInt("count", 0) + 1
         prefs.edit()
             .putInt("count", count)
@@ -26,10 +28,11 @@ class WorkoutStore(context: Context) {
             .putLong("session_${count}_duration", durationSeconds)
             .putFloat("session_${count}_distance", distanceMeters)
             .putFloat("session_${count}_calories", calories)
+            .putString("session_${count}_activity", activity)
             .apply()
     }
 
-    fun saveStepSession(steps: Int, durationSeconds: Long) = saveSession(steps, durationSeconds, 0f, 0f)
+    fun saveStepSession(steps: Int, durationSeconds: Long) = saveSession(steps, durationSeconds, 0f, 0f, "Walk")
 
     fun sessions(): List<Session> {
         val count = prefs.getInt("count", 0)
@@ -39,7 +42,8 @@ class WorkoutStore(context: Context) {
                 prefs.getInt("session_${i}_steps", 0),
                 prefs.getLong("session_${i}_duration", 0L),
                 prefs.getFloat("session_${i}_distance", 0f),
-                prefs.getFloat("session_${i}_calories", 0f)
+                prefs.getFloat("session_${i}_calories", 0f),
+                prefs.getString("session_${i}_activity", "Walk") ?: "Walk"
             )
         }.sortedBy { it.date }
     }
