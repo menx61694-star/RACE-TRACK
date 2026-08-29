@@ -8,6 +8,7 @@ on:
       - feature/map-integration
       - fix/icon-build-e4fba63
       - feature/workout-map-history
+      - feature/workout-experience-v2
   pull_request:
     branches: [ main ]
   workflow_dispatch:
