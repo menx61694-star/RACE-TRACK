@@ -176,7 +176,7 @@ fun Phase2HomeScreenV2(steps: Int, profile: ProfileStore, workoutStore: WorkoutS
     val strideMeters = height * 0.414f / 100f
     val estimatedDistanceKm = steps * strideMeters / 1000f
     val estimatedCalories = (weight * 0.96f * estimatedDistanceKm).roundToInt()
-    val today = workoutStore.forRange(startOfDay(), startOfDay() + DAY_MS)
+    val today = workoutStore.forRange(startOfDay(), startOfDay() + 86_400_000L)
     val workoutDistanceKm = today.sumOf { it.distanceMeters.toDouble() }.toFloat() / 1000f
     val workoutCalories = today.sumOf { it.calories.toDouble() }.toFloat()
     val distanceKm = max(estimatedDistanceKm, workoutDistanceKm)
