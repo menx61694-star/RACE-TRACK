@@ -90,7 +90,7 @@ private fun ProductionRoot() {
         when {
             setupProfile -> Unit
             screen == "settings" -> screen = "profile"
-            screen == "live" -> { tracker.stop(); screen = "home" }
+            screen == "live" -> Unit
             screen != "home" -> screen = "home"
             else -> Unit
         }
@@ -118,13 +118,13 @@ private fun ProductionRoot() {
         }) { padding ->
             Box(Modifier.padding(padding)) {
                 when (screen) {
-                    "home" -> Phase2HomeScreen(todaySteps, profile, workoutStore) { screen = "live" }
-                    "live" -> Phase2LiveScreen(profile, tracker) { steps, duration, distance, calories ->
-                        workoutStore.saveSession(steps, duration, distance, calories)
+                    "home" -> WorkoutExperienceHome(todaySteps, profile, workoutStore) { screen = "live" }
+                    "live" -> WorkoutExperienceLive(profile, tracker) { steps, duration, distance, calories, activity ->
+                        workoutStore.saveSession(steps, duration, distance, calories, activity)
                         tracker.stop()
                         screen = "home"
                     }
-                    "analytics" -> Phase2AnalyticsScreen(stepStore, workoutStore)
+                    "analytics" -> WorkoutExperienceProgress(stepStore, workoutStore, profile)
                     "community" -> CommunityScreen()
                     "profile" -> Phase2ProfileScreen(profile, onEdit = { setupProfile = true }, onSettings = { screen = "settings" })
                     "settings" -> Phase2SettingsScreen(context, onEditProfile = { setupProfile = true }, onBack = { screen = "profile" })
