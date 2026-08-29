@@ -118,9 +118,9 @@ private fun ProductionRoot() {
         }) { padding ->
             Box(Modifier.padding(padding)) {
                 when (screen) {
-                    "home" -> Phase2HomeScreen(todaySteps, profile, workoutStore) { screen = "live" }
-                    "live" -> Phase2LiveScreen(profile, tracker) { steps, duration, distance, calories ->
-                        workoutStore.saveSession(steps, duration, distance, calories)
+                    "home" -> Phase2HomeScreenV2(todaySteps, profile, workoutStore) { screen = "live" }
+                    "live" -> Phase2LiveScreenV2(profile, tracker) { steps, duration, distance, calories, activity ->
+                        workoutStore.saveSession(steps, duration, distance, calories, activity)
                         tracker.stop()
                         screen = "home"
                     }
