@@ -1,0 +1,149 @@
+package com.racetrack.app
+
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import kotlinx.coroutines.delay
+
+class RootActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent { ProductionRoot() }
+    }
+}
+
+private val corePermissions = buildList {
+    add(Manifest.permission.ACTIVITY_RECOGNITION)
+    add(Manifest.permission.ACCESS_FINE_LOCATION)
+    add(Manifest.permission.ACCESS_COARSE_LOCATION)
+    if (android.os.Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
+}
+
+@Composable
+private fun ProductionRoot() {
+    val context = LocalContext.current
+    val tracker = remember { StepTracker(context) }
+    val stepStore = remember { StepDataStore(context) }
+    val workoutStore = remember { WorkoutStore(context) }
+    val profile = remember { ProfileStore(context) }
+    var screen by rememberSaveable { mutableStateOf("home") }
+    var setupProfile by rememberSaveable { mutableStateOf(!profile.isComplete) }
+    var permissionsChecked by rememberSaveable { mutableStateOf(false) }
+    var todaySteps by remember { mutableIntStateOf(stepStore.todaySteps()) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        permissionsChecked = true
+        startStepServiceIfAllowed(context)
+        setupProfile = !profile.isComplete
+    }
+
+    LaunchedEffect(Unit) {
+        val missing = corePermissions.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
+        if (missing.isNotEmpty()) permissionLauncher.launch(missing.toTypedArray()) else {
+            permissionsChecked = true
+            startStepServiceIfAllowed(context)
+            setupProfile = !profile.isComplete
+        }
+    }
+
+    LaunchedEffect(permissionsChecked) {
+        if (!permissionsChecked) return@LaunchedEffect
+        while (true) { todaySteps = stepStore.todaySteps(); delay(1000) }
+    }
+
+    BackHandler {
+        when {
+            setupProfile -> Unit
+            screen == "settings" -> screen = "profile"
+            screen == "live" -> Unit
+            screen != "home" -> screen = "home"
+            else -> Unit
+        }
+    }
+
+    MaterialTheme(colorScheme = darkColorScheme(primary = Green, secondary = Cyan, background = Charcoal, surface = Card, error = Coral)) {
+        if (!permissionsChecked) {
+            PermissionGate(onContinue = {
+                val missing = corePermissions.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
+                if (missing.isNotEmpty()) permissionLauncher.launch(missing.toTypedArray()) else permissionsChecked = true
+            })
+            return@MaterialTheme
+        }
+        if (setupProfile) {
+            ProfileSetupScreen(profile) { setupProfile = false; screen = "home" }
+            return@MaterialTheme
+        }
+        Scaffold(containerColor = Charcoal, bottomBar = {
+            if (screen != "live" && screen != "settings") NavigationBar(containerColor = Card) {
+                NavItem("home", Icons.Default.Home, "Home", screen) { screen = it }
+                NavItem("analytics", Icons.Default.BarChart, "Stats", screen) { screen = it }
+                NavItem("community", Icons.Default.EmojiEvents, "Community", screen) { screen = it }
+                NavItem("profile", Icons.Default.Person, "Profile", screen) { screen = it }
+            }
+        }) { padding ->
+            Box(Modifier.padding(padding)) {
+                when (screen) {
+                    "home" -> WorkoutExperienceHome(todaySteps, profile, workoutStore) { screen = "live" }
+                    "live" -> WorkoutExperienceLive(profile, tracker) { steps, duration, distance, calories, activity ->
+                        workoutStore.saveSession(steps, duration, distance, calories, activity)
+                        tracker.stop()
+                        screen = "home"
+                    }
+                    "analytics" -> WorkoutExperienceProgress(stepStore, workoutStore, profile)
+                    "community" -> CommunityScreen()
+                    "profile" -> Phase2ProfileScreen(profile, onEdit = { setupProfile = true }, onSettings = { screen = "settings" })
+                    "settings" -> Phase2SettingsScreen(context, onEditProfile = { setupProfile = true }, onBack = { screen = "profile" })
+                }
+            }
+        }
+    }
+}
+
+private fun startStepServiceIfAllowed(context: android.content.Context) {
+    if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION) != PackageManager.PERMISSION_GRANTED) return
+    ContextCompat.startForegroundService(context, Intent(context, StepCountingService::class.java))
+}
+
+@Composable
+private fun PermissionGate(onContinue: () -> Unit) {
+    Column(Modifier.fillMaxSize().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Text("Race Track", style = MaterialTheme.typography.headlineLarge)
+        Text("Before you start, allow activity, location and notification permissions so tracking can work correctly.", modifier = Modifier.padding(top = 12.dp, bottom = 24.dp), style = MaterialTheme.typography.bodyLarge)
+        Button(onClick = onContinue) { Text("Allow permissions") }
+    }
+}
