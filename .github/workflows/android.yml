@@ -11,6 +11,7 @@ on:
       - feature/workout-experience-v2
       - fix/gps-map-laps-v3
       - fix/gps-satellite-location-v4
+      - fix/map-crash-stability-v6
   pull_request:
     branches: [ main ]
   workflow_dispatch:
