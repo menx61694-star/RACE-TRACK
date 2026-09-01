@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
+import android.location.LocationManager
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
@@ -12,6 +13,7 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import kotlin.math.max
 
 class LocationTracker(private val context: Context) {
@@ -24,6 +26,7 @@ class LocationTracker(private val context: Context) {
     )
 
     private val client: FusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(context)
+    private val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
     private var callback: ((Snapshot) -> Unit)? = null
     private var active = false
     private var paused = false
@@ -38,7 +41,7 @@ class LocationTracker(private val context: Context) {
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             if (!active || paused) return
-            result.locations.forEach(::acceptLocation)
+            result.locations.forEach { acceptLocation(it, initial = false) }
         }
     }
 
@@ -60,21 +63,31 @@ class LocationTracker(private val context: Context) {
         routePoints.clear()
         snapshot = Snapshot()
 
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
+        // A fresh fused fix is requested immediately. Android documents getCurrentLocation()
+        // as the preferred way to obtain a fresh location when possible.
+        client.getCurrentLocation(
+            if (hasFine) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+            CancellationTokenSource().token
+        ).addOnSuccessListener { location ->
+            if (!active || paused || location == null) return@addOnSuccessListener
+            acceptLocation(location, initial = true)
+        }
+
+        val priority = if (hasFine) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
+        val request = LocationRequest.Builder(priority, 1000L)
             .setMinUpdateIntervalMillis(500L)
-            .setMinUpdateDistanceMeters(2f)
+            .setMinUpdateDistanceMeters(1f)
             .setWaitForAccurateLocation(false)
             .build()
 
         client.requestLocationUpdates(request, locationCallback, context.mainLooper)
-            .addOnFailureListener { publish(0f) }
+            .addOnFailureListener { publish(lastLocation?.speedOrZero() ?: 0f) }
 
+        // Cached location is only used as a quick fallback while the fresh request warms up.
         client.lastLocation.addOnSuccessListener { location ->
-            if (!active || paused || location == null) return@addOnSuccessListener
-            if (location.accuracy in 0.1f..50f && System.currentTimeMillis() - location.time <= 120_000L) {
-                lastLocation = Location(location)
-                routePoints.add(Location(location))
-                publish(location.speedOrZero())
+            if (!active || paused || location == null || lastLocation != null) return@addOnSuccessListener
+            if (location.accuracy in 0.1f..100f && System.currentTimeMillis() - location.time <= 120_000L) {
+                acceptLocation(location, initial = true)
             }
         }
     }
@@ -97,9 +110,11 @@ class LocationTracker(private val context: Context) {
     fun resume() {
         if (!active || !paused) return
         paused = false
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
+        val hasFine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val priority = if (hasFine) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
+        val request = LocationRequest.Builder(priority, 1000L)
             .setMinUpdateIntervalMillis(500L)
-            .setMinUpdateDistanceMeters(2f)
+            .setMinUpdateDistanceMeters(1f)
             .setWaitForAccurateLocation(false)
             .build()
         client.requestLocationUpdates(request, locationCallback, context.mainLooper)
@@ -113,21 +128,25 @@ class LocationTracker(private val context: Context) {
         lastLocation = null
     }
 
-    private fun acceptLocation(location: Location) {
-        if (location.accuracy <= 0f || location.accuracy > 50f) return
+    private fun acceptLocation(location: Location, initial: Boolean) {
+        val maxAccuracy = if (initial) 100f else 50f
+        if (location.accuracy <= 0f || location.accuracy > maxAccuracy) return
+
         val previous = lastLocation
         if (previous != null) {
             val dt = ((location.time - previous.time).coerceAtLeast(500L)) / 1000f
             val segment = previous.distanceTo(location)
             val speed = location.speedOrZero()
-            val maxSpeed = if (speed > 0f) max(12f, speed + 6f) else 12f
-            val maxSegment = (maxSpeed * dt + max(previous.accuracy, location.accuracy)).coerceAtLeast(12f)
+            val maxSpeed = if (speed > 0f) max(10f, speed + 5f) else 10f
+            val maxSegment = (maxSpeed * dt + max(previous.accuracy, location.accuracy)).coerceAtLeast(10f)
             if (segment > maxSegment) return
+            // Ignore tiny GPS jitter instead of accumulating it as walking distance.
             if (segment >= 1.5f) totalMeters += segment
         }
+
         lastLocation = Location(location)
         routePoints.add(Location(location))
-        if (routePoints.size > 1500) routePoints.removeAt(0)
+        if (routePoints.size > 2000) routePoints.removeAt(0)
         publish(location.speedOrZero())
     }
 
