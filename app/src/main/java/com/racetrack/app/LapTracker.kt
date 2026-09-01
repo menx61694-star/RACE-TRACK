@@ -7,15 +7,12 @@ data class LapRecord(
 )
 
 class LapTracker(private val lapDistanceMeters: Float) {
-    private var completedDistance = 0f
     private var nextLapAt = lapDistanceMeters
     private var lapStartTime = 0L
     private var lapNumber = 1
-
     val records = mutableListOf<LapRecord>()
 
     fun reset() {
-        completedDistance = 0f
         nextLapAt = lapDistanceMeters
         lapStartTime = 0L
         lapNumber = 1
@@ -34,10 +31,9 @@ class LapTracker(private val lapDistanceMeters: Float) {
             nextLapAt += lapDistanceMeters
             lapStartTime = elapsedSeconds
         }
-        completedDistance = totalDistanceMeters
         return newRecords
     }
 
     fun currentLapDistance(totalDistanceMeters: Float): Float = (totalDistanceMeters - (nextLapAt - lapDistanceMeters)).coerceAtLeast(0f)
-    fun selectedDistanceMeters(): Float = lapDistanceMeters
+    fun currentLapElapsed(elapsedSeconds: Long): Long = (elapsedSeconds - lapStartTime).coerceAtLeast(0L)
 }
