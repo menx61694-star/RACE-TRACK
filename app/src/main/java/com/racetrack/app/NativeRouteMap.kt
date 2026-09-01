@@ -29,13 +29,15 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 
+// Esri's World Imagery tile service. The server.arcgisonline.com endpoint
+// is the established XYZ endpoint for this raster basemap.
 private val WORLD_SATELLITE = XYTileSource(
     "World Satellite",
     0,
     19,
     256,
     ".jpg",
-    arrayOf("https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"),
+    arrayOf("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"),
     "Sources: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
 )
 
@@ -67,7 +69,9 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
                     isTilesScaledToDpi = true
                     minZoomLevel = 3.0
                     maxZoomLevel = 19.0
-                    controller.setZoom(16.0)
+                    // Start slightly wider so imagery is available even where
+                    // the highest-resolution satellite tile has no coverage.
+                    controller.setZoom(15.0)
                     onResume()
                     mapView = this
                 }
@@ -93,10 +97,9 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
                         snippet = "GPS position"
                     })
 
-                    // Center only when the first valid GPS point arrives.
-                    // Re-centering on every GPS update makes the map jump while walking/running.
+                    // Do not keep moving the camera on every GPS update.
                     if (!hasCenteredOnLocation) {
-                        map.controller.setZoom(17.0)
+                        map.controller.setZoom(16.0)
                         map.controller.setCenter(last)
                         hasCenteredOnLocation = true
                     }
