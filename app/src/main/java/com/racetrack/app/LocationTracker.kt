@@ -5,7 +5,6 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
-import android.location.LocationManager
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
@@ -26,7 +25,6 @@ class LocationTracker(private val context: Context) {
     )
 
     private val client: FusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(context)
-    private val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
     private var callback: ((Snapshot) -> Unit)? = null
     private var active = false
     private var paused = false
@@ -63,8 +61,6 @@ class LocationTracker(private val context: Context) {
         routePoints.clear()
         snapshot = Snapshot()
 
-        // A fresh fused fix is requested immediately. Android documents getCurrentLocation()
-        // as the preferred way to obtain a fresh location when possible.
         client.getCurrentLocation(
             if (hasFine) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY,
             CancellationTokenSource().token
@@ -83,7 +79,6 @@ class LocationTracker(private val context: Context) {
         client.requestLocationUpdates(request, locationCallback, context.mainLooper)
             .addOnFailureListener { publish(lastLocation?.speedOrZero() ?: 0f) }
 
-        // Cached location is only used as a quick fallback while the fresh request warms up.
         client.lastLocation.addOnSuccessListener { location ->
             if (!active || paused || location == null || lastLocation != null) return@addOnSuccessListener
             if (location.accuracy in 0.1f..100f && System.currentTimeMillis() - location.time <= 120_000L) {
@@ -140,7 +135,6 @@ class LocationTracker(private val context: Context) {
             val maxSpeed = if (speed > 0f) max(10f, speed + 5f) else 10f
             val maxSegment = (maxSpeed * dt + max(previous.accuracy, location.accuracy)).coerceAtLeast(10f)
             if (segment > maxSegment) return
-            // Ignore tiny GPS jitter instead of accumulating it as walking distance.
             if (segment >= 1.5f) totalMeters += segment
         }
 
