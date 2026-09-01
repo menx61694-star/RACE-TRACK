@@ -151,7 +151,7 @@ fun WorkoutExperienceLive(profile: ProfileStore, tracker: StepTracker, onFinish:
 
     LaunchedEffect(Unit) {
         tracker.start()
-        locationTracker.start { s -> distance = s.distanceMeters; accuracy = s.accuracyMeters; route = s.route }
+        locationTracker.start(onUpdate = { s -> distance = s.distanceMeters; accuracy = s.accuracyMeters; route = s.route })
         while (true) {
             delay(1000)
             if (running) { elapsed++; locationTracker.addElapsedSeconds(elapsed) }
