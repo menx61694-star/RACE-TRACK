@@ -5,13 +5,17 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
+import android.location.LocationManager
 import androidx.core.content.ContextCompat
+import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.LocationSettingsRequest
 import com.google.android.gms.location.Priority
+import com.google.android.gms.common.api.ResolvableApiException
 import com.google.android.gms.tasks.CancellationTokenSource
 import kotlin.math.max
 
@@ -25,7 +29,9 @@ class LocationTracker(private val context: Context) {
     )
 
     private val client: FusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(context)
+    private val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
     private var callback: ((Snapshot) -> Unit)? = null
+    private var statusCallback: ((String) -> Unit)? = null
     private var active = false
     private var paused = false
     private var lastLocation: Location? = null
@@ -44,15 +50,18 @@ class LocationTracker(private val context: Context) {
     }
 
     @SuppressLint("MissingPermission")
-    fun start(onUpdate: (Snapshot) -> Unit) {
+    fun start(onUpdate: (Snapshot) -> Unit, onStatus: (String) -> Unit = {}) {
         val hasFine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val hasCoarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        callback = onUpdate
+        statusCallback = onStatus
+
         if (!hasFine && !hasCoarse) {
+            onStatus("Location permission is not granted")
             onUpdate(snapshot)
             return
         }
 
-        callback = onUpdate
         active = true
         paused = false
         lastLocation = null
@@ -61,12 +70,9 @@ class LocationTracker(private val context: Context) {
         routePoints.clear()
         snapshot = Snapshot()
 
-        client.getCurrentLocation(
-            if (hasFine) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY,
-            CancellationTokenSource().token
-        ).addOnSuccessListener { location ->
-            if (!active || paused || location == null) return@addOnSuccessListener
-            acceptLocation(location, initial = true)
+        if (!isLocationEnabled()) {
+            onStatus("Location services are OFF")
+            return
         }
 
         val priority = if (hasFine) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
@@ -76,14 +82,70 @@ class LocationTracker(private val context: Context) {
             .setWaitForAccurateLocation(false)
             .build()
 
-        client.requestLocationUpdates(request, locationCallback, context.mainLooper)
-            .addOnFailureListener { publish(lastLocation?.speedOrZero() ?: 0f) }
+        // Ask Google Play services whether the requested location settings are usable.
+        LocationServices.getSettingsClient(context)
+            .checkLocationSettings(
+                LocationSettingsRequest.Builder()
+                    .addLocationRequest(request)
+                    .setAlwaysShow(true)
+                    .build()
+            )
+            .addOnSuccessListener { requestFreshLocation(priority) }
+            .addOnFailureListener { error ->
+                if (error is ResolvableApiException) onStatus("Turn on Location / GPS")
+                else onStatus("Location settings unavailable")
+                requestFreshLocation(priority)
+            }
+    }
 
+    @SuppressLint("MissingPermission")
+    private fun requestFreshLocation(priority: Int) {
+        if (!active || paused) return
+
+        val request = LocationRequest.Builder(priority, 1000L)
+            .setMinUpdateIntervalMillis(500L)
+            .setMinUpdateDistanceMeters(1f)
+            .setWaitForAccurateLocation(false)
+            .build()
+
+        val currentRequest = CurrentLocationRequest.Builder()
+            .setPriority(priority)
+            .setMaxUpdateAgeMillis(5_000L)
+            .setDurationMillis(15_000L)
+            .build()
+
+        statusCallback?.invoke("Acquiring GPS fix…")
+
+        client.getCurrentLocation(currentRequest, CancellationTokenSource().token)
+            .addOnSuccessListener { location ->
+                if (!active || paused) return@addOnSuccessListener
+                if (location != null) acceptLocation(location, initial = true)
+                else statusCallback?.invoke("Searching for GPS signal…")
+            }
+            .addOnFailureListener { error ->
+                statusCallback?.invoke("GPS fix failed: ${error.javaClass.simpleName}")
+            }
+
+        client.requestLocationUpdates(request, locationCallback, context.mainLooper)
+            .addOnFailureListener { error ->
+                statusCallback?.invoke("GPS updates failed: ${error.javaClass.simpleName}")
+            }
+
+        // Last known location is only a fallback while the fresh fix is being acquired.
         client.lastLocation.addOnSuccessListener { location ->
             if (!active || paused || location == null || lastLocation != null) return@addOnSuccessListener
             if (location.accuracy in 0.1f..100f && System.currentTimeMillis() - location.time <= 120_000L) {
                 acceptLocation(location, initial = true)
             }
+        }
+    }
+
+    private fun isLocationEnabled(): Boolean {
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            locationManager.isLocationEnabled
+        } else {
+            @Suppress("DEPRECATION")
+            locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) || locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
         }
     }
 
@@ -105,14 +167,13 @@ class LocationTracker(private val context: Context) {
     fun resume() {
         if (!active || !paused) return
         paused = false
+        if (!isLocationEnabled()) {
+            statusCallback?.invoke("Location services are OFF")
+            return
+        }
         val hasFine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val priority = if (hasFine) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
-        val request = LocationRequest.Builder(priority, 1000L)
-            .setMinUpdateIntervalMillis(500L)
-            .setMinUpdateDistanceMeters(1f)
-            .setWaitForAccurateLocation(false)
-            .build()
-        client.requestLocationUpdates(request, locationCallback, context.mainLooper)
+        requestFreshLocation(priority)
     }
 
     fun stop() {
@@ -120,12 +181,16 @@ class LocationTracker(private val context: Context) {
         paused = false
         client.removeLocationUpdates(locationCallback)
         callback = null
+        statusCallback = null
         lastLocation = null
     }
 
     private fun acceptLocation(location: Location, initial: Boolean) {
         val maxAccuracy = if (initial) 100f else 50f
-        if (location.accuracy <= 0f || location.accuracy > maxAccuracy) return
+        if (location.accuracy <= 0f || location.accuracy > maxAccuracy) {
+            statusCallback?.invoke("GPS accuracy is too low (${location.accuracy.roundToIntSafe()} m)")
+            return
+        }
 
         val previous = lastLocation
         if (previous != null) {
@@ -141,6 +206,7 @@ class LocationTracker(private val context: Context) {
         lastLocation = Location(location)
         routePoints.add(Location(location))
         if (routePoints.size > 2000) routePoints.removeAt(0)
+        statusCallback?.invoke("GPS ± ${location.accuracy.roundToIntSafe()} m")
         publish(location.speedOrZero())
     }
 
@@ -152,4 +218,5 @@ class LocationTracker(private val context: Context) {
     }
 
     private fun Location.speedOrZero(): Float = if (hasSpeed()) speed.coerceAtLeast(0f) else 0f
+    private fun Float.roundToIntSafe(): Int = kotlin.math.roundToInt()
 }
