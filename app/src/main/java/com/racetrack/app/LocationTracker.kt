@@ -18,6 +18,7 @@ import com.google.android.gms.location.Priority
 import com.google.android.gms.common.api.ResolvableApiException
 import com.google.android.gms.tasks.CancellationTokenSource
 import kotlin.math.max
+import kotlin.math.roundToInt
 
 class LocationTracker(private val context: Context) {
     data class Snapshot(
@@ -82,7 +83,6 @@ class LocationTracker(private val context: Context) {
             .setWaitForAccurateLocation(false)
             .build()
 
-        // Ask Google Play services whether the requested location settings are usable.
         LocationServices.getSettingsClient(context)
             .checkLocationSettings(
                 LocationSettingsRequest.Builder()
@@ -131,7 +131,6 @@ class LocationTracker(private val context: Context) {
                 statusCallback?.invoke("GPS updates failed: ${error.javaClass.simpleName}")
             }
 
-        // Last known location is only a fallback while the fresh fix is being acquired.
         client.lastLocation.addOnSuccessListener { location ->
             if (!active || paused || location == null || lastLocation != null) return@addOnSuccessListener
             if (location.accuracy in 0.1f..100f && System.currentTimeMillis() - location.time <= 120_000L) {
@@ -188,7 +187,7 @@ class LocationTracker(private val context: Context) {
     private fun acceptLocation(location: Location, initial: Boolean) {
         val maxAccuracy = if (initial) 100f else 50f
         if (location.accuracy <= 0f || location.accuracy > maxAccuracy) {
-            statusCallback?.invoke("GPS accuracy is too low (${location.accuracy.roundToIntSafe()} m)")
+            statusCallback?.invoke("GPS accuracy is too low (${location.accuracy.roundToInt()} m)")
             return
         }
 
@@ -206,7 +205,7 @@ class LocationTracker(private val context: Context) {
         lastLocation = Location(location)
         routePoints.add(Location(location))
         if (routePoints.size > 2000) routePoints.removeAt(0)
-        statusCallback?.invoke("GPS ± ${location.accuracy.roundToIntSafe()} m")
+        statusCallback?.invoke("GPS ± ${location.accuracy.roundToInt()} m")
         publish(location.speedOrZero())
     }
 
@@ -218,5 +217,4 @@ class LocationTracker(private val context: Context) {
     }
 
     private fun Location.speedOrZero(): Float = if (hasSpeed()) speed.coerceAtLeast(0f) else 0f
-    private fun Float.roundToIntSafe(): Int = kotlin.math.roundToInt()
 }
