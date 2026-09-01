@@ -33,7 +33,7 @@ private val WORLD_SATELLITE = XYTileSource(
     19,
     256,
     ".jpg",
-    arrayOf("https://wi.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/"),
+    arrayOf("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"),
     "Sources: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
 )
 
@@ -50,7 +50,7 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
                     context,
                     context.getSharedPreferences("osmdroid", android.content.Context.MODE_PRIVATE)
                 )
-                Configuration.getInstance().userAgentValue = context.packageName
+                Configuration.getInstance().userAgentValue = "RaceTrack/${context.packageName}"
 
                 MapView(context).apply {
                     setTileSource(WORLD_SATELLITE)
@@ -58,6 +58,8 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
                     setMultiTouchControls(true)
                     setBuiltInZoomControls(false)
                     isTilesScaledToDpi = true
+                    minZoomLevel = 3.0
+                    maxZoomLevel = 19.0
                     controller.setZoom(16.0)
                     mapView = this
                     onResume()
