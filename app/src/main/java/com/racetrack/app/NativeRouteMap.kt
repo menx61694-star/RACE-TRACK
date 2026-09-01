@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import org.osmdroid.config.Configuration
@@ -34,7 +35,7 @@ private val WORLD_SATELLITE = XYTileSource(
     19,
     256,
     ".jpg",
-    arrayOf("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"),
+    arrayOf("https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"),
     "Sources: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
 )
 
@@ -43,6 +44,7 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var mapView by remember { mutableStateOf<MapView?>(null) }
+    var hasCenteredOnLocation by remember { mutableStateOf(false) }
 
     Box(modifier) {
         AndroidView(
@@ -56,34 +58,52 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
                     )
                 )
                 Configuration.getInstance().userAgentValue = context.packageName
-                MapView(context.applicationContext).apply {
+
+                MapView(context).apply {
                     setTileSource(WORLD_SATELLITE)
                     setUseDataConnection(true)
                     setMultiTouchControls(true)
                     setBuiltInZoomControls(false)
                     isTilesScaledToDpi = true
+                    minZoomLevel = 3.0
+                    maxZoomLevel = 19.0
                     controller.setZoom(16.0)
+                    onResume()
                     mapView = this
                 }
             },
             update = { map ->
                 map.overlays.removeAll { it is Polyline || it is Marker }
+
                 if (route.isNotEmpty()) {
                     val points = route.map { GeoPoint(it.latitude, it.longitude) }
+
                     map.overlays.add(Polyline(map).apply {
                         setPoints(points)
                         setColor(android.graphics.Color.rgb(0, 230, 118))
                         setWidth(9f)
                     })
+
                     val last = points.last()
                     map.overlays.add(Marker(map).apply {
                         position = last
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        icon = ContextCompat.getDrawable(context, R.drawable.current_location_marker)
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                         title = "Current location"
+                        snippet = "GPS position"
                     })
-                    map.controller.animateTo(last)
-                    if (points.size == 1) map.controller.setZoom(17.0)
+
+                    // Center only when the first valid GPS point arrives.
+                    // Re-centering on every GPS update makes the map jump while walking/running.
+                    if (!hasCenteredOnLocation) {
+                        map.controller.setZoom(17.0)
+                        map.controller.setCenter(last)
+                        hasCenteredOnLocation = true
+                    }
+                } else {
+                    hasCenteredOnLocation = false
                 }
+
                 map.invalidate()
             }
         )
@@ -109,8 +129,6 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             map?.onPause()
-            // Do not call onDetach here. Compose can dispose/recreate AndroidView
-            // while the activity remains alive; forcing detach here can crash osmdroid.
             mapView = null
         }
     }
