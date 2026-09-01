@@ -14,6 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -33,26 +34,29 @@ private val WORLD_SATELLITE = XYTileSource(
     19,
     256,
     ".jpg",
-    arrayOf("https://wi.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/"),
+    arrayOf("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"),
     "Sources: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
 )
 
 @Composable
 fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var mapView by remember { mutableStateOf<MapView?>(null) }
 
     Box(modifier) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
-            factory = { context ->
+            factory = {
                 Configuration.getInstance().load(
-                    context,
-                    context.getSharedPreferences("osmdroid", android.content.Context.MODE_PRIVATE)
+                    context.applicationContext,
+                    context.applicationContext.getSharedPreferences(
+                        "osmdroid",
+                        android.content.Context.MODE_PRIVATE
+                    )
                 )
                 Configuration.getInstance().userAgentValue = context.packageName
-
-                MapView(context).apply {
+                MapView(context.applicationContext).apply {
                     setTileSource(WORLD_SATELLITE)
                     setUseDataConnection(true)
                     setMultiTouchControls(true)
@@ -60,28 +64,23 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
                     isTilesScaledToDpi = true
                     controller.setZoom(16.0)
                     mapView = this
-                    onResume()
                 }
             },
             update = { map ->
                 map.overlays.removeAll { it is Polyline || it is Marker }
-
                 if (route.isNotEmpty()) {
                     val points = route.map { GeoPoint(it.latitude, it.longitude) }
-                    val line = Polyline(map).apply {
+                    map.overlays.add(Polyline(map).apply {
                         setPoints(points)
                         setColor(android.graphics.Color.rgb(0, 230, 118))
                         setWidth(9f)
-                    }
-                    map.overlays.add(line)
-
+                    })
                     val last = points.last()
-                    val marker = Marker(map).apply {
+                    map.overlays.add(Marker(map).apply {
                         position = last
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                         title = "Current location"
-                    }
-                    map.overlays.add(marker)
+                    })
                     map.controller.animateTo(last)
                     if (points.size == 1) map.controller.setZoom(17.0)
                 }
@@ -107,11 +106,12 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) map?.onResume()
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             map?.onPause()
-            map?.onDetach()
+            // Do not call onDetach here. Compose can dispose/recreate AndroidView
+            // while the activity remains alive; forcing detach here can crash osmdroid.
+            mapView = null
         }
     }
 }
