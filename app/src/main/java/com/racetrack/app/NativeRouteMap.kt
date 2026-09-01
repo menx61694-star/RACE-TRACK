@@ -31,13 +31,11 @@ import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 
 // ArcGIS REST uses level/row/column (z/y/x), while osmdroid's XYTileSource
-// generates z/x/y. Use an explicit tile source so the request order is correct.
-// The source name is versioned to prevent old failed tiles from the previous
-// implementation being reused from the osmdroid tile cache.
+// normally generates z/x/y. Use an explicit tile source so requests are correct.
 private val WORLD_SATELLITE = object : OnlineTileSourceBase(
-    "World Satellite ArcGIS Fixed v2",
+    "World Satellite ArcGIS Fixed v3",
     0,
-    19,
+    17,
     256,
     ".jpg",
     arrayOf("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"),
@@ -78,7 +76,9 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
                     setBuiltInZoomControls(false)
                     isTilesScaledToDpi = true
                     minZoomLevel = 3.0
-                    maxZoomLevel = 19.0
+                    // Deliberately cap at the highest verified ArcGIS level for
+                    // this app so a pinch-to-max zoom cannot enter blank tiles.
+                    maxZoomLevel = 17.0
                     controller.setZoom(15.0)
                     onResume()
                     mapView = this
@@ -106,7 +106,7 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
                     })
 
                     if (!hasCenteredOnLocation) {
-                        map.controller.setZoom(17.0)
+                        map.controller.setZoom(16.0)
                         map.controller.setCenter(last)
                         hasCenteredOnLocation = true
                     }
