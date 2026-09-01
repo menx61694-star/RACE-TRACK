@@ -3,6 +3,10 @@ package com.racetrack.app
 import android.location.Location
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
@@ -28,6 +32,7 @@ private val WORLD_SATELLITE = XYTileSource(
 @Composable
 fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
     val lifecycleOwner = LocalLifecycleOwner.current
+    var mapView by remember { mutableStateOf<MapView?>(null) }
 
     AndroidView(
         modifier = modifier,
@@ -39,6 +44,7 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
                 setBuiltInZoomControls(false)
                 isTilesScaledToDpi = true
                 controller.setZoom(16.0)
+                mapView = this
             }
         },
         update = { map ->
@@ -65,20 +71,25 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
             }
             map.invalidate()
         }
-    ).also { /* lifecycle is handled below through the same composition */ }
+    )
 
-    DisposableEffect(lifecycleOwner) {
-        var currentMap: MapView? = null
+    DisposableEffect(lifecycleOwner, mapView) {
+        val map = mapView
         val observer = LifecycleEventObserver { _, event ->
-            // AndroidView owns the actual MapView; lifecycle events are forwarded by the
-            // owner when the composable enters/leaves the foreground.
-            if (event == Lifecycle.Event.ON_PAUSE) currentMap?.onPause()
-            if (event == Lifecycle.Event.ON_RESUME) currentMap?.onResume()
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> map?.onResume()
+                Lifecycle.Event.ON_PAUSE -> map?.onPause()
+                else -> Unit
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            map?.onResume()
+        }
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            currentMap?.onDetach()
+            map?.onPause()
+            map?.onDetach()
         }
     }
 }
