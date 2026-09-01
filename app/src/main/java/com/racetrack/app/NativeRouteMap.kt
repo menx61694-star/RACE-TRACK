@@ -33,7 +33,7 @@ private val WORLD_SATELLITE = XYTileSource(
     19,
     256,
     ".jpg",
-    arrayOf("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"),
+    arrayOf("https://wi.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/"),
     "Sources: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
 )
 
