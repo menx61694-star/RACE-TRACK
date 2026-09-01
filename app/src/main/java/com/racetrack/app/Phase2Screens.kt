@@ -62,7 +62,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 fun Phase2HomeScreen(steps: Int, profile: ProfileStore, workoutStore: WorkoutStore, onStart: () -> Unit) {
     val today = workoutStore.forRange(startOfDay(), startOfDay() + DAY_MS)
     val stepDistance = (steps * (profile.heightCm.coerceAtLeast(150f) * 0.415f)) / 100000f
-    val calories = (steps * profile.weightKg.coerceAtLeast(45f) * 0.00045f)
+    val calories = steps * profile.weightKg.coerceAtLeast(45f) * 0.00045f
     val goal = profile.dailyGoal.coerceAtLeast(1)
     val progress = (steps.toFloat() / goal).coerceIn(0f, 1f)
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp), contentPadding = PaddingValues(top = 22.dp, bottom = 110.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -85,7 +85,7 @@ fun Phase2HomeScreen(steps: Int, profile: ProfileStore, workoutStore: WorkoutSto
 }
 
 @Composable
-fun Phase2LiveScreen(profile: ProfileStore, tracker: StepTracker, onFinish: (Int, Long, Float, Float, String) -> Unit) {
+fun Phase2LiveScreen(profile: ProfileStore, tracker: StepTracker, onFinish: (Int, Long, Float, Float, String, List<LapRecord>) -> Unit) {
     val context = LocalContext.current
     val location = remember { LocationTracker(context) }
     val workoutStore = remember { WorkoutStore(context) }
@@ -106,6 +106,7 @@ fun Phase2LiveScreen(profile: ProfileStore, tracker: StepTracker, onFinish: (Int
     val latestDistance by rememberUpdatedState(distance)
     val latestCalories by rememberUpdatedState((if (activity == "Run") 7.0 else 3.5) * 3.5 * weight / 200.0 * (elapsed / 60.0))
     val latestActivity by rememberUpdatedState(activity)
+    val latestLaps by rememberUpdatedState(lapRecords)
 
     LaunchedEffect(Unit) {
         tracker.start()
@@ -139,32 +140,32 @@ fun Phase2LiveScreen(profile: ProfileStore, tracker: StepTracker, onFinish: (Int
         onDispose {
             tracker.stop()
             location.stop()
-            if (sessionFinalized.compareAndSet(false, true)) workoutStore.saveSession(latestSteps, latestElapsed, latestDistance, latestCalories.toFloat(), latestActivity)
+            if (sessionFinalized.compareAndSet(false, true)) workoutStore.saveSession(latestSteps, latestElapsed, latestDistance, latestCalories.toFloat(), latestActivity, latestLaps)
         }
     }
 
     BackHandler {
-        if (sessionFinalized.compareAndSet(false, true)) onFinish(latestSteps, latestElapsed, latestDistance, latestCalories.toFloat(), latestActivity)
+        if (sessionFinalized.compareAndSet(false, true)) onFinish(latestSteps, latestElapsed, latestDistance, latestCalories.toFloat(), latestActivity, latestLaps)
     }
 
     val calories = ((if (activity == "Run") 7.0 else 3.5) * 3.5 * weight / 200.0 * (elapsed / 60.0)).toFloat()
     val paceSecondsPerKm = if (speed > 0.3f) 1000f / speed else 0f
     val currentLapDistance = lapTracker.currentLapDistance(distance)
-    val currentLapTime = if (lapRecords.isEmpty()) elapsed else elapsed - lapRecords.last().elapsedSeconds - lapRecords.dropLast(1).sumOf { 0L }
+    val currentLapTime = lapTracker.currentLapElapsed(elapsed)
 
     Column(Modifier.fillMaxSize().background(Charcoal)) {
         Box(Modifier.fillMaxWidth().weight(1f)) {
             NativeRouteMap(route, Modifier.fillMaxSize())
             if (route.isEmpty()) {
-                Card(Modifier.align(Alignment.TopCenter).padding(18.dp), colors = CardDefaults.cardColors(containerColor = Card.copy(alpha = 0.92f)), shape = RoundedCornerShape(16.dp)) {
+                Card(Modifier.align(Alignment.TopCenter).padding(18.dp), colors = CardDefaults.cardColors(containerColor = Card.copy(alpha = 0.94f)), shape = RoundedCornerShape(16.dp)) {
                     Column(Modifier.padding(horizontal = 18.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("Waiting for GPS", color = Color.White, fontWeight = FontWeight.Bold)
-                        if (accuracy > 0f) Text("Accuracy %.0f m".format(accuracy), color = Muted, fontSize = 12.sp)
+                        Text("Turn on Location and keep GPS available.", color = Muted, fontSize = 12.sp)
                         OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) }) { Text("Turn on Location") }
                     }
                 }
             } else {
-                Card(Modifier.align(Alignment.TopStart).padding(14.dp), colors = CardDefaults.cardColors(containerColor = Card.copy(alpha = 0.92f)), shape = RoundedCornerShape(14.dp)) { Text("GPS ± %.0f m".format(accuracy), Modifier.padding(10.dp), color = if (accuracy <= 15f) Green else if (accuracy <= 30f) Color.Yellow else Coral, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+                Card(Modifier.align(Alignment.TopStart).padding(14.dp), colors = CardDefaults.cardColors(containerColor = Card.copy(alpha = 0.94f)), shape = RoundedCornerShape(14.dp)) { Text("GPS ± %.0f m".format(accuracy), Modifier.padding(10.dp), color = if (accuracy <= 15f) Green else if (accuracy <= 30f) Color.Yellow else Coral, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
             }
         }
         Card(shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), colors = CardDefaults.cardColors(containerColor = Card), modifier = Modifier.fillMaxWidth()) {
@@ -186,7 +187,7 @@ fun Phase2LiveScreen(profile: ProfileStore, tracker: StepTracker, onFinish: (Int
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Lap ${lapRecords.size + 1}", color = Green, fontWeight = FontWeight.Bold)
                     Text("%.0f / %.0f m".format(currentLapDistance, lapChoice), color = Muted)
-                    Text("${formatWorkoutDuration(currentLapTime)}", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(formatWorkoutDuration(currentLapTime), color = Color.White, fontWeight = FontWeight.Bold)
                 }
                 if (lapRecords.isNotEmpty()) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -195,7 +196,7 @@ fun Phase2LiveScreen(profile: ProfileStore, tracker: StepTracker, onFinish: (Int
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                     OutlinedButton(onClick = { if (running) { tracker.pause(); location.pause(); running = false } else { tracker.resume(); location.resume(); running = true } }, modifier = Modifier.weight(1f).height(52.dp), shape = CircleShape) { Icon(if (running) Icons.Default.Stop else Icons.Default.PlayArrow, null); Spacer(Modifier.size(6.dp)); Text(if (running) "Pause" else "Resume") }
-                    Button(onClick = { if (sessionFinalized.compareAndSet(false, true)) onFinish(tracker.steps, elapsed, distance, calories, activity) }, modifier = Modifier.weight(1f).height(52.dp), shape = CircleShape, colors = ButtonDefaults.buttonColors(containerColor = Coral)) { Icon(Icons.Default.Stop, null); Spacer(Modifier.size(6.dp)); Text("Finish") }
+                    Button(onClick = { if (sessionFinalized.compareAndSet(false, true)) onFinish(tracker.steps, elapsed, distance, calories, activity, lapRecords) }, modifier = Modifier.weight(1f).height(52.dp), shape = CircleShape, colors = ButtonDefaults.buttonColors(containerColor = Coral)) { Icon(Icons.Default.Stop, null); Spacer(Modifier.size(6.dp)); Text("Finish") }
                 }
             }
         }
@@ -256,7 +257,7 @@ fun Phase2AnalyticsScreen(stepStore: StepDataStore, workoutStore: WorkoutStore) 
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { labels.forEachIndexed { i, label -> FilterChip(selected = selected == i, onClick = { selected = i }, label = { Text(label) }) } } }
         item { Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = Card)) { Column(Modifier.padding(18.dp)) { Text("Steps", color = Muted); Text("%,d".format(total), color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Black); Spacer(Modifier.height(20.dp)); SimpleBarChart(points) } } }
         item { Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Card)) { Column(Modifier.padding(18.dp)) { Text("Tracked distance", color = Muted); Text("%.2f km".format(distance / 1000f), color = Cyan, fontSize = 28.sp, fontWeight = FontWeight.Black); Text("GPS workout distance", color = Muted, fontSize = 12.sp) } } }
-        item { Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Card)) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Text("Workout history", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold); if (sessions.isEmpty()) Text("No Walk / Run sessions recorded yet.", color = Muted) else sessions.takeLast(10).reversed().forEach { s -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Column(Modifier.weight(1f)) { Text("${s.activity} • ${workoutStore.formatDate(s.date)}", color = Color.White, fontWeight = FontWeight.Bold); Text("${s.steps} steps • %.2f km • ${s.calories.roundToInt()} kcal".format(s.distanceMeters / 1000f), color = Muted, fontSize = 12.sp) }; Text(formatWorkoutDuration(s.durationSeconds), color = Green, fontWeight = FontWeight.Bold) } } } } }
+        item { Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Card)) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Text("Workout history", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold); if (sessions.isEmpty()) Text("No Walk / Run sessions recorded yet.", color = Muted) else sessions.takeLast(10).reversed().forEach { s -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Column(Modifier.weight(1f)) { Text("${s.activity} • ${workoutStore.formatDate(s.date)}", color = Color.White, fontWeight = FontWeight.Bold); Text("${s.steps} steps • %.2f km • ${s.calories.roundToInt()} kcal".format(s.distanceMeters / 1000f), color = Muted, fontSize = 12.sp); if (s.laps.isNotEmpty()) Text(s.laps.joinToString("   ") { "L${it.number} ${formatWorkoutDuration(it.elapsedSeconds)}" }, color = Green, fontSize = 12.sp) }; Text(formatWorkoutDuration(s.durationSeconds), color = Green, fontWeight = FontWeight.Bold) } } } } }
     }
 }
 
