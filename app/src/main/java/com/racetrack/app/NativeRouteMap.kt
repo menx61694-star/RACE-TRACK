@@ -29,7 +29,7 @@ import org.osmdroid.views.overlay.Polyline
 
 private val WORLD_SATELLITE = XYTileSource(
     "World Satellite",
-    1,
+    0,
     19,
     256,
     ".jpg",
@@ -46,14 +46,21 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { context ->
+                Configuration.getInstance().load(
+                    context,
+                    context.getSharedPreferences("osmdroid", android.content.Context.MODE_PRIVATE)
+                )
                 Configuration.getInstance().userAgentValue = context.packageName
+
                 MapView(context).apply {
                     setTileSource(WORLD_SATELLITE)
+                    setUseDataConnection(true)
                     setMultiTouchControls(true)
                     setBuiltInZoomControls(false)
                     isTilesScaledToDpi = true
                     controller.setZoom(16.0)
                     mapView = this
+                    onResume()
                 }
             },
             update = { map ->
@@ -100,9 +107,7 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-            map?.onResume()
-        }
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) map?.onResume()
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             map?.onPause()
