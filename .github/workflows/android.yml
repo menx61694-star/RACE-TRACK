@@ -10,6 +10,7 @@ on:
       - feature/workout-map-history
       - feature/workout-experience-v2
       - fix/gps-map-laps-v3
+      - fix/gps-satellite-location-v4
   pull_request:
     branches: [ main ]
   workflow_dispatch:
