@@ -2,15 +2,14 @@ package com.racetrack.app
 
 import android.location.Location
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Polyline
 
 @Composable
 fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
@@ -30,8 +29,8 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
                 val points = route.map { GeoPoint(it.latitude, it.longitude) }
                 val line = Polyline(map).apply {
                     setPoints(points)
-                    color = android.graphics.Color.rgb(0, 230, 118)
-                    width = 10f
+                    setColor(android.graphics.Color.rgb(0, 230, 118))
+                    setWidth(10f)
                 }
                 map.overlays.add(line)
 
