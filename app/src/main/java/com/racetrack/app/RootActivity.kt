@@ -118,13 +118,13 @@ private fun ProductionRoot() {
         }) { padding ->
             Box(Modifier.padding(padding)) {
                 when (screen) {
-                    "home" -> WorkoutExperienceHome(todaySteps, profile, workoutStore) { screen = "live" }
-                    "live" -> WorkoutExperienceLive(profile, tracker) { steps, duration, distance, calories, activity ->
+                    "home" -> Phase2HomeScreen(todaySteps, profile, workoutStore) { screen = "live" }
+                    "live" -> Phase2LiveScreen(profile, tracker) { steps, duration, distance, calories, activity ->
                         workoutStore.saveSession(steps, duration, distance, calories, activity)
                         tracker.stop()
                         screen = "home"
                     }
-                    "analytics" -> WorkoutExperienceProgress(stepStore, workoutStore, profile)
+                    "analytics" -> Phase2AnalyticsScreen(stepStore, workoutStore)
                     "community" -> CommunityScreen()
                     "profile" -> Phase2ProfileScreen(profile, onEdit = { setupProfile = true }, onSettings = { screen = "settings" })
                     "settings" -> Phase2SettingsScreen(context, onEditProfile = { setupProfile = true }, onBack = { screen = "profile" })
@@ -143,7 +143,7 @@ private fun startStepServiceIfAllowed(context: android.content.Context) {
 private fun PermissionGate(onContinue: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Text("Race Track", style = MaterialTheme.typography.headlineLarge)
-        Text("Before you start, allow activity, location and notification permissions so tracking can work correctly.", modifier = Modifier.padding(top = 12.dp, bottom = 24.dp), style = MaterialTheme.typography.bodyLarge)
+        Text("Allow activity, location and notification permissions before tracking.", modifier = Modifier.padding(top = 12.dp, bottom = 24.dp), style = MaterialTheme.typography.bodyLarge)
         Button(onClick = onContinue) { Text("Allow permissions") }
     }
 }
