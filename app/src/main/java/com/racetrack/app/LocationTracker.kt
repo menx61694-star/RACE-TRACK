@@ -5,18 +5,15 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
+import android.location.LocationListener
 import android.location.LocationManager
 import androidx.core.content.ContextCompat
-import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.LocationSettingsRequest
 import com.google.android.gms.location.Priority
-import com.google.android.gms.common.api.ResolvableApiException
-import com.google.android.gms.tasks.CancellationTokenSource
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -50,22 +47,68 @@ class LocationTracker(private val context: Context) {
         }
     }
 
+    private val gpsListener = object : LocationListener {
+        override fun onLocationChanged(location: Location) {
+            if (active && !paused) acceptLocation(location, initial = lastLocation == null)
+        }
+    }
+
     @SuppressLint("MissingPermission")
     fun start(onUpdate: (Snapshot) -> Unit, onStatus: (String) -> Unit = {}) {
+        stop()
         callback = onUpdate
         statusCallback = onStatus
-        resetSession()
+        snapshot = Snapshot()
         if (!hasLocationPermission()) {
-            onStatus("Location permission is not granted")
-            onUpdate(snapshot)
+            statusCallback?.invoke("Location permission is not granted")
+            callback?.invoke(snapshot)
+            return
+        }
+        if (!isLocationEnabled()) {
+            statusCallback?.invoke("Location services are OFF")
+            callback?.invoke(snapshot)
             return
         }
         active = true
-        if (!isLocationEnabled()) {
-            onStatus("Location services are OFF")
-            return
+        statusCallback?.invoke("Acquiring GPS fix…")
+        startLocationSources()
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startLocationSources() {
+        if (!active || paused || !hasLocationPermission()) return
+        val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val priority = if (fine) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
+        val request = LocationRequest.Builder(priority, 1000L)
+            .setMinUpdateIntervalMillis(500L)
+            .setMinUpdateDistanceMeters(1f)
+            .setWaitForAccurateLocation(false)
+            .build()
+
+        client.requestLocationUpdates(request, locationCallback, context.mainLooper)
+            .addOnFailureListener { statusCallback?.invoke("Fused GPS unavailable; using device GPS…") }
+
+        if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+            try {
+                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 1f, gpsListener, context.mainLooper)
+            } catch (_: SecurityException) {
+                statusCallback?.invoke("GPS permission unavailable")
+            }
         }
-        requestSettingsAndLocation()
+        if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+            try {
+                locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1000L, 1f, gpsListener, context.mainLooper)
+            } catch (_: SecurityException) { }
+        }
+
+        val lastGps = try { locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (_: SecurityException) { null }
+        val lastNetwork = try { locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (_: SecurityException) { null }
+        listOfNotNull(lastGps, lastNetwork)
+            .filter { it.accuracy > 0f && System.currentTimeMillis() - it.time <= 60_000L }
+            .minByOrNull { it.accuracy }
+            ?.let { acceptLocation(it, initial = true) }
+
+        statusCallback?.invoke(if (lastLocation != null) "GPS ± ${lastLocation!!.accuracy.roundToInt()} m" else "Searching for GPS signal…")
     }
 
     fun retry() {
@@ -78,76 +121,16 @@ class LocationTracker(private val context: Context) {
             statusCallback?.invoke("Location services are OFF")
             return
         }
-        requestSettingsAndLocation()
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun requestSettingsAndLocation() {
-        if (!active || paused) return
-        val hasFine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val priority = if (hasFine) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
-        val request = LocationRequest.Builder(priority, 1000L)
-            .setMinUpdateIntervalMillis(500L)
-            .setMinUpdateDistanceMeters(1f)
-            .setWaitForAccurateLocation(false)
-            .build()
-
-        LocationServices.getSettingsClient(context)
-            .checkLocationSettings(
-                LocationSettingsRequest.Builder()
-                    .addLocationRequest(request)
-                    .setAlwaysShow(true)
-                    .build()
-            )
-            .addOnSuccessListener { requestFreshLocation(priority) }
-            .addOnFailureListener { error ->
-                if (error is ResolvableApiException) statusCallback?.invoke("Turn on Location / GPS")
-                else statusCallback?.invoke("Location settings unavailable")
-                requestFreshLocation(priority)
-            }
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun requestFreshLocation(priority: Int) {
-        if (!active || paused) return
-        val request = LocationRequest.Builder(priority, 1000L)
-            .setMinUpdateIntervalMillis(500L)
-            .setMinUpdateDistanceMeters(1f)
-            .setWaitForAccurateLocation(false)
-            .build()
-        val currentRequest = CurrentLocationRequest.Builder()
-            .setPriority(priority)
-            .setMaxUpdateAgeMillis(5_000L)
-            .setDurationMillis(15_000L)
-            .build()
-
-        statusCallback?.invoke("Acquiring GPS fix…")
-        client.getCurrentLocation(currentRequest, CancellationTokenSource().token)
-            .addOnSuccessListener { location ->
-                if (!active || paused) return@addOnSuccessListener
-                if (location != null) acceptLocation(location, initial = true)
-                else statusCallback?.invoke("Searching for GPS signal…")
-            }
-            .addOnFailureListener { error -> statusCallback?.invoke("GPS fix failed: ${error.javaClass.simpleName}") }
-
-        client.requestLocationUpdates(request, locationCallback, context.mainLooper)
-            .addOnFailureListener { error -> statusCallback?.invoke("GPS updates failed: ${error.javaClass.simpleName}") }
-
-        client.lastLocation.addOnSuccessListener { location ->
-            if (!active || paused || location == null || lastLocation != null) return@addOnSuccessListener
-            if (location.accuracy in 0.1f..100f && System.currentTimeMillis() - location.time <= 120_000L) acceptLocation(location, initial = true)
-        }
+        statusCallback?.invoke("Retrying GPS fix…")
+        startLocationSources()
     }
 
     private fun resetSession() {
-        active = false
-        paused = false
         lastLocation = null
         totalMeters = 0f
         elapsedSeconds = 0L
         routePoints.clear()
         snapshot = Snapshot()
-        client.removeLocationUpdates(locationCallback)
     }
 
     private fun hasLocationPermission(): Boolean =
@@ -171,7 +154,7 @@ class LocationTracker(private val context: Context) {
     fun pause() {
         if (!active || paused) return
         paused = true
-        client.removeLocationUpdates(locationCallback)
+        removeUpdates()
         lastLocation = null
     }
 
@@ -182,19 +165,26 @@ class LocationTracker(private val context: Context) {
         retry()
     }
 
+    @SuppressLint("MissingPermission")
+    private fun removeUpdates() {
+        client.removeLocationUpdates(locationCallback)
+        try { locationManager.removeUpdates(gpsListener) } catch (_: SecurityException) { }
+    }
+
+    @SuppressLint("MissingPermission")
     fun stop() {
         active = false
         paused = false
-        client.removeLocationUpdates(locationCallback)
+        removeUpdates()
         callback = null
         statusCallback = null
         lastLocation = null
     }
 
     private fun acceptLocation(location: Location, initial: Boolean) {
-        val maxAccuracy = if (initial) 100f else 50f
+        val maxAccuracy = if (initial) 100f else 75f
         if (location.accuracy <= 0f || location.accuracy > maxAccuracy) {
-            statusCallback?.invoke("GPS accuracy is too low (${location.accuracy.roundToInt()} m)")
+            statusCallback?.invoke("GPS accuracy is low (${location.accuracy.roundToInt()} m)…")
             return
         }
         val previous = lastLocation
@@ -202,14 +192,14 @@ class LocationTracker(private val context: Context) {
             val dt = ((location.time - previous.time).coerceAtLeast(500L)) / 1000f
             val segment = previous.distanceTo(location)
             val speed = location.speedOrZero()
-            val maxSpeed = if (speed > 0f) max(10f, speed + 5f) else 10f
+            val maxSpeed = if (speed > 0.5f) max(10f, speed + 5f) else 10f
             val maxSegment = (maxSpeed * dt + max(previous.accuracy, location.accuracy)).coerceAtLeast(10f)
             if (segment > maxSegment) return
             if (segment >= 1.5f) totalMeters += segment
         }
         lastLocation = Location(location)
         routePoints.add(Location(location))
-        if (routePoints.size > 2000) routePoints.removeAt(0)
+        if (routePoints.size > 4000) routePoints.removeAt(0)
         statusCallback?.invoke("GPS ± ${location.accuracy.roundToInt()} m")
         publish(location.speedOrZero())
     }
