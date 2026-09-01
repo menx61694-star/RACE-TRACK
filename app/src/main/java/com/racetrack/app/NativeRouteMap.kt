@@ -23,23 +23,33 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import org.osmdroid.config.Configuration
-import org.osmdroid.tileprovider.tilesource.XYTileSource
+import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.util.GeoPoint
+import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 
-// Esri's World Imagery tile service. The server.arcgisonline.com endpoint
-// is the established XYZ endpoint for this raster basemap.
-private val WORLD_SATELLITE = XYTileSource(
-    "World Satellite",
+// ArcGIS REST uses level/row/column (z/y/x), while osmdroid's XYTileSource
+// generates z/x/y. Use an explicit tile source so the request order is correct.
+// The source name is versioned to prevent old failed tiles from the previous
+// implementation being reused from the osmdroid tile cache.
+private val WORLD_SATELLITE = object : OnlineTileSourceBase(
+    "World Satellite ArcGIS Fixed v2",
     0,
     19,
     256,
     ".jpg",
     arrayOf("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"),
     "Sources: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
-)
+) {
+    override fun getTileURLString(tileIndex: Long): String {
+        val z = MapTileIndex.getZoom(tileIndex)
+        val x = MapTileIndex.getX(tileIndex)
+        val y = MapTileIndex.getY(tileIndex)
+        return getBaseUrl() + z + "/" + y + "/" + x + ".jpg"
+    }
+}
 
 @Composable
 fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
@@ -69,8 +79,6 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
                     isTilesScaledToDpi = true
                     minZoomLevel = 3.0
                     maxZoomLevel = 19.0
-                    // Start slightly wider so imagery is available even where
-                    // the highest-resolution satellite tile has no coverage.
                     controller.setZoom(15.0)
                     onResume()
                     mapView = this
@@ -97,9 +105,8 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
                         snippet = "GPS position"
                     })
 
-                    // Do not keep moving the camera on every GPS update.
                     if (!hasCenteredOnLocation) {
-                        map.controller.setZoom(16.0)
+                        map.controller.setZoom(17.0)
                         map.controller.setCenter(last)
                         hasCenteredOnLocation = true
                     }
