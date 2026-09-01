@@ -172,7 +172,8 @@ class LocationTracker(private val context: Context) {
         if (!active || paused) return
         paused = true
         client.removeLocationUpdates(locationCallback)
-        lastLocation = null
+        // Keep the last accepted point so resume does not create an artificial
+        // jump or reset the distance reference.
     }
 
     @SuppressLint("MissingPermission")
@@ -192,21 +193,42 @@ class LocationTracker(private val context: Context) {
     }
 
     private fun acceptLocation(location: Location, initial: Boolean) {
-        val maxAccuracy = if (initial) 100f else 50f
+        // A GPS accuracy value is a radius estimate, not exact position error.
+        // Use tighter limits for tracking so noisy fixes do not become route lines.
+        val maxAccuracy = if (initial) 30f else 25f
         if (location.accuracy <= 0f || location.accuracy > maxAccuracy) {
             statusCallback?.invoke("GPS accuracy is too low (${location.accuracy.roundToInt()} m)")
             return
         }
+
         val previous = lastLocation
         if (previous != null) {
             val dt = ((location.time - previous.time).coerceAtLeast(500L)) / 1000f
             val segment = previous.distanceTo(location)
-            val speed = location.speedOrZero()
-            val maxSpeed = if (speed > 0f) max(10f, speed + 5f) else 10f
-            val maxSegment = (maxSpeed * dt + max(previous.accuracy, location.accuracy)).coerceAtLeast(10f)
-            if (segment > maxSegment) return
-            if (segment >= 1.5f) totalMeters += segment
+            val reportedSpeed = location.speedOrZero()
+
+            // Ignore sub-resolution GPS jitter. The threshold scales with the
+            // reported accuracy, so a 9 m fix cannot create lots of fake 1-3 m
+            // movement while the phone is stationary.
+            val movementThreshold = max(3f, max(previous.accuracy, location.accuracy) * 0.75f)
+
+            // If the device does not provide a reliable speed, use a conservative
+            // upper bound. Real walking/running fixes with reported speed can use
+            // the larger running bound below.
+            val maxSpeed = if (location.hasSpeed() && location.speed >= 0f) {
+                max(12f, location.speed + 6f)
+            } else {
+                8f
+            }
+            val maxSegment = maxSpeed * dt + max(2f, max(previous.accuracy, location.accuracy) * 0.25f)
+
+            if (segment > maxSegment) {
+                statusCallback?.invoke("GPS jump ignored")
+                return
+            }
+            if (segment >= movementThreshold) totalMeters += segment
         }
+
         lastLocation = Location(location)
         routePoints.add(Location(location))
         if (routePoints.size > 2000) routePoints.removeAt(0)
