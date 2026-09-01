@@ -95,6 +95,7 @@ fun Phase2LiveScreen(profile: ProfileStore, tracker: StepTracker, onFinish: (Int
     var speed by remember { mutableFloatStateOf(0f) }
     var accuracy by remember { mutableFloatStateOf(0f) }
     var route by remember { mutableStateOf<List<Location>>(emptyList()) }
+    var gpsStatus by remember { mutableStateOf("Starting GPS…") }
     var activity by remember { mutableStateOf("Walk") }
     var lapChoice by remember { mutableFloatStateOf(1000f) }
     val lapTracker = remember(lapChoice) { LapTracker(lapChoice) }
@@ -110,14 +111,17 @@ fun Phase2LiveScreen(profile: ProfileStore, tracker: StepTracker, onFinish: (Int
 
     LaunchedEffect(Unit) {
         tracker.start()
-        location.start { snapshot ->
-            distance = snapshot.distanceMeters
-            speed = snapshot.currentSpeedMps
-            accuracy = snapshot.accuracyMeters
-            route = snapshot.route
-            val newLaps = lapTracker.update(snapshot.distanceMeters, elapsed)
-            if (newLaps.isNotEmpty()) lapRecords = lapTracker.records.toList()
-        }
+        location.start(
+            onUpdate = { snapshot ->
+                distance = snapshot.distanceMeters
+                speed = snapshot.currentSpeedMps
+                accuracy = snapshot.accuracyMeters
+                route = snapshot.route
+                val newLaps = lapTracker.update(snapshot.distanceMeters, elapsed)
+                if (newLaps.isNotEmpty()) lapRecords = lapTracker.records.toList()
+            },
+            onStatus = { gpsStatus = it }
+        )
         while (true) {
             delay(1000)
             if (running) {
@@ -126,6 +130,14 @@ fun Phase2LiveScreen(profile: ProfileStore, tracker: StepTracker, onFinish: (Int
                 val newLaps = lapTracker.update(distance, elapsed)
                 if (newLaps.isNotEmpty()) lapRecords = lapTracker.records.toList()
             }
+        }
+    }
+
+    // If the user enables Location after entering the screen, retry without resetting the workout.
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(3000)
+            if (running && route.isEmpty()) location.retry()
         }
     }
 
@@ -157,15 +169,19 @@ fun Phase2LiveScreen(profile: ProfileStore, tracker: StepTracker, onFinish: (Int
         Box(Modifier.fillMaxWidth().weight(1f)) {
             NativeRouteMap(route, Modifier.fillMaxSize())
             if (route.isEmpty()) {
-                Card(Modifier.align(Alignment.TopCenter).padding(18.dp), colors = CardDefaults.cardColors(containerColor = Card.copy(alpha = 0.94f)), shape = RoundedCornerShape(16.dp)) {
-                    Column(Modifier.padding(horizontal = 18.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Waiting for GPS", color = Color.White, fontWeight = FontWeight.Bold)
-                        Text("Turn on Location and keep GPS available.", color = Muted, fontSize = 12.sp)
-                        OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) }) { Text("Turn on Location") }
+                Card(Modifier.align(Alignment.TopCenter).padding(18.dp), colors = CardDefaults.cardColors(containerColor = Card.copy(alpha = 0.96f)), shape = RoundedCornerShape(18.dp)) {
+                    Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(if (gpsStatus == "Location services are OFF" || gpsStatus == "Turn on Location / GPS") "Location is Off" else "Waiting for GPS", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(gpsStatus, color = Muted, fontSize = 12.sp)
+                        OutlinedButton(onClick = {
+                            context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                        }) { Text("Open Location Settings") }
                     }
                 }
             } else {
-                Card(Modifier.align(Alignment.TopStart).padding(14.dp), colors = CardDefaults.cardColors(containerColor = Card.copy(alpha = 0.94f)), shape = RoundedCornerShape(14.dp)) { Text("GPS ± %.0f m".format(accuracy), Modifier.padding(10.dp), color = if (accuracy <= 15f) Green else if (accuracy <= 30f) Color.Yellow else Coral, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+                Card(Modifier.align(Alignment.TopStart).padding(14.dp), colors = CardDefaults.cardColors(containerColor = Card.copy(alpha = 0.94f)), shape = RoundedCornerShape(14.dp)) {
+                    Text("GPS ± %.0f m".format(accuracy), Modifier.padding(10.dp), color = if (accuracy <= 15f) Green else if (accuracy <= 30f) Color.Yellow else Coral, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
             }
         }
         Card(shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), colors = CardDefaults.cardColors(containerColor = Card), modifier = Modifier.fillMaxWidth()) {
@@ -204,7 +220,8 @@ fun Phase2LiveScreen(profile: ProfileStore, tracker: StepTracker, onFinish: (Int
 }
 
 @Composable
-private fun LiveMetric(label: String, value: String) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Text(value, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp); Text(label, color = Muted, fontSize = 10.sp) } }
+private fun LiveMetric(label: String, value: String) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Text(value, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp); Text(label, color = Muted, fontSize = 10.sp) }
+}
 
 @Composable
 private fun MetricCard(icon: String, title: String, value: String, modifier: Modifier) {
