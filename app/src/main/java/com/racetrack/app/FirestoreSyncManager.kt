@@ -1,6 +1,8 @@
 package com.racetrack.app
 
+import android.location.Location
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.CollectionReference
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 
@@ -51,17 +53,18 @@ class FirestoreSyncManager {
 
         val collection = db.collection("users").document(uid).collection("workouts")
         val chunks = workouts.chunked(450)
-        commitWorkoutChunk(collection, chunks, 0, onComplete)
+        commitWorkoutChunk(collection, chunks, 0, workouts.size, onComplete)
     }
 
     private fun commitWorkoutChunk(
-        collection: com.google.firebase.firestore.CollectionReference,
+        collection: CollectionReference,
         chunks: List<List<WorkoutStore.Session>>,
         index: Int,
+        totalCount: Int,
         onComplete: (Boolean, String) -> Unit
     ) {
         if (index >= chunks.size) {
-            onComplete(true, "${chunks.flatten().size} workout(s) synced")
+            onComplete(true, "$totalCount workout(s) synced")
             return
         }
 
@@ -80,13 +83,16 @@ class FirestoreSyncManager {
                         "distanceMeters" to lap.distanceMeters,
                         "elapsedSeconds" to lap.elapsedSeconds
                     )
+                },
+                "route" to session.route.map { point ->
+                    mapOf("latitude" to point.latitude, "longitude" to point.longitude)
                 }
             )
             batch.set(collection.document(session.id), data, SetOptions.merge())
         }
 
         batch.commit()
-            .addOnSuccessListener { commitWorkoutChunk(collection, chunks, index + 1, onComplete) }
+            .addOnSuccessListener { commitWorkoutChunk(collection, chunks, index + 1, totalCount, onComplete) }
             .addOnFailureListener { e -> onComplete(false, e.localizedMessage ?: "Workout sync failed") }
     }
 
@@ -142,6 +148,15 @@ class FirestoreSyncManager {
                         val elapsed = (map["elapsedSeconds"] as? Number)?.toLong() ?: return@mapNotNull null
                         LapRecord(number, lapDistance, elapsed)
                     } ?: emptyList()
+                    val route = (document.get("route") as? List<*>)?.mapNotNull { raw ->
+                        val map = raw as? Map<*, *> ?: return@mapNotNull null
+                        val latitude = (map["latitude"] as? Number)?.toDouble() ?: return@mapNotNull null
+                        val longitude = (map["longitude"] as? Number)?.toDouble() ?: return@mapNotNull null
+                        Location("cloud").apply {
+                            this.latitude = latitude
+                            this.longitude = longitude
+                        }
+                    } ?: emptyList()
                     workoutStore.upsertSession(
                         WorkoutStore.Session(
                             date = date,
@@ -151,7 +166,7 @@ class FirestoreSyncManager {
                             calories = calories,
                             activity = activity,
                             laps = laps,
-                            route = emptyList(),
+                            route = route,
                             id = document.id
                         )
                     )
