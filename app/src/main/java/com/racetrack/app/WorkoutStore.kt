@@ -1,6 +1,7 @@
 package com.racetrack.app
 
 import android.content.Context
+import android.location.Location
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -13,15 +14,17 @@ class WorkoutStore(context: Context) {
         val distanceMeters: Float,
         val calories: Float,
         val activity: String,
-        val laps: List<LapRecord> = emptyList()
+        val laps: List<LapRecord> = emptyList(),
+        val route: List<Location> = emptyList()
     )
 
     private val prefs = context.getSharedPreferences("workouts", Context.MODE_PRIVATE)
 
-    fun saveSession(steps: Int, durationSeconds: Long, distanceMeters: Float, calories: Float, activity: String = "Walk", laps: List<LapRecord> = emptyList()) {
+    fun saveSession(steps: Int, durationSeconds: Long, distanceMeters: Float, calories: Float, activity: String = "Walk", laps: List<LapRecord> = emptyList(), route: List<Location> = emptyList()) {
         if (durationSeconds <= 0L && steps <= 0 && distanceMeters <= 0f) return
         val count = prefs.getInt("count", 0) + 1
         val lapString = laps.joinToString(";") { "${it.number},${it.distanceMeters},${it.elapsedSeconds}" }
+        val routeString = route.joinToString(";") { "${it.latitude},${it.longitude}" }
         prefs.edit()
             .putInt("count", count)
             .putLong("session_${count}_date", System.currentTimeMillis())
@@ -31,6 +34,7 @@ class WorkoutStore(context: Context) {
             .putFloat("session_${count}_calories", calories)
             .putString("session_${count}_activity", activity)
             .putString("session_${count}_laps", lapString)
+            .putString("session_${count}_route", routeString)
             .apply()
     }
 
@@ -44,6 +48,11 @@ class WorkoutStore(context: Context) {
                 val p = raw.split(',')
                 if (p.size != 3) null else runCatching { LapRecord(p[0].toInt(), p[1].toFloat(), p[2].toLong()) }.getOrNull()
             }
+            val routeString = prefs.getString("session_${i}_route", "") ?: ""
+            val route = routeString.split(';').mapNotNull { raw ->
+                val p = raw.split(',')
+                if (p.size != 2) null else runCatching { Location("history").apply { latitude = p[0].toDouble(); longitude = p[1].toDouble() } }.getOrNull()
+            }
             Session(
                 prefs.getLong("session_${i}_date", 0L),
                 prefs.getInt("session_${i}_steps", 0),
@@ -51,7 +60,8 @@ class WorkoutStore(context: Context) {
                 prefs.getFloat("session_${i}_distance", 0f),
                 prefs.getFloat("session_${i}_calories", 0f),
                 prefs.getString("session_${i}_activity", "Walk") ?: "Walk",
-                laps
+                laps,
+                route
             )
         }.sortedBy { it.date }
     }
