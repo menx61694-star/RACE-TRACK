@@ -48,6 +48,15 @@ fun GoogleAuthScreen(
         user = auth.currentUser
     }
 
+    fun runSync() {
+        busy = true
+        status = "Restoring and syncing…"
+        sync.restoreAndSyncAll(profile, workoutStore) { success, message ->
+            busy = false
+            status = if (success) "Cloud sync complete" else "Sync failed: $message"
+        }
+    }
+
     Column(
         Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -87,11 +96,7 @@ fun GoogleAuthScreen(
                             busy = false
                             status = message
                             user = auth.currentUser
-                            if (success && user != null) {
-                                sync.syncAll(profile, workoutStore) { syncSuccess, syncMessage ->
-                                    status = if (syncSuccess) "Signed in and synced" else "Signed in, but sync failed: $syncMessage"
-                                }
-                            }
+                            if (success && user != null) runSync()
                         }
                     }
                 },
@@ -102,17 +107,10 @@ fun GoogleAuthScreen(
         } else {
             Button(
                 enabled = !busy,
-                onClick = {
-                    busy = true
-                    status = "Syncing…"
-                    sync.syncAll(profile, workoutStore) { success, message ->
-                        busy = false
-                        status = message
-                    }
-                },
+                onClick = { runSync() },
                 modifier = Modifier.fillMaxWidth().height(54.dp)
             ) {
-                Text(if (busy) "Syncing…" else "Sync now")
+                Text(if (busy) "Syncing…" else "Restore & Sync")
             }
             OutlinedButton(
                 enabled = !busy,
