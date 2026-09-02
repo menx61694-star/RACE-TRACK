@@ -18,8 +18,9 @@ import com.google.firebase.auth.GoogleAuthProvider
  * stores so Phase 1 remains usable when Firebase is not configured or offline.
  */
 class FirebaseAuthManager(context: Context) {
+    private val context = context
     private val appContext = context.applicationContext
-    private val credentialManager = CredentialManager.create(appContext)
+    private val credentialManager = CredentialManager.create(context)
 
     val isConfigured: Boolean
         get() = FirebaseApp.getApps(appContext).isNotEmpty()
@@ -50,7 +51,7 @@ class FirebaseAuthManager(context: Context) {
                 .addCredentialOption(googleIdOption)
                 .build()
 
-            val result = credentialManager.getCredential(appContext, request)
+            val result = credentialManager.getCredential(context, request)
             val credential = result.credential
 
             if (credential !is CustomCredential ||
