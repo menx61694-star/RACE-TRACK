@@ -23,8 +23,9 @@ class WorkoutStore(context: Context) {
     fun saveSession(steps: Int, durationSeconds: Long, distanceMeters: Float, calories: Float, activity: String = "Walk", laps: List<LapRecord> = emptyList(), route: List<Location> = emptyList()) {
         if (durationSeconds <= 0L && steps <= 0 && distanceMeters <= 0f) return
         val count = prefs.getInt("count", 0) + 1
+        val savedRoute = if (route.isNotEmpty()) route else RouteReplaySession.route
         val lapString = laps.joinToString(";") { "${it.number},${it.distanceMeters},${it.elapsedSeconds}" }
-        val routeString = route.joinToString(";") { "${it.latitude},${it.longitude}" }
+        val routeString = savedRoute.joinToString(";") { "${it.latitude},${it.longitude}" }
         prefs.edit()
             .putInt("count", count)
             .putLong("session_${count}_date", System.currentTimeMillis())
@@ -38,7 +39,7 @@ class WorkoutStore(context: Context) {
             .apply()
     }
 
-    fun saveStepSession(steps: Int, durationSeconds: Long) = saveSession(steps, durationSeconds, 0f, 0f, "Walk")
+    fun saveStepSession(steps: Int, durationSeconds: Long) = saveSession(steps, durationSeconds, 0f, 0f, "Walk", emptyList(), emptyList())
 
     fun sessions(): List<Session> {
         val count = prefs.getInt("count", 0)
