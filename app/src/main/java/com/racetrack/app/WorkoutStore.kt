@@ -77,7 +77,7 @@ class WorkoutStore(context: Context) {
             val steps = prefs.getInt("session_${i}_steps", 0)
             val duration = prefs.getLong("session_${i}_duration", 0L)
             val distance = prefs.getFloat("session_${i}_distance", 0f)
-            val legacyId = "legacy_${date}_${steps}_${duration}_${distance.toBits()}"
+            val legacyId = "${date}_${steps}_${duration}_${distance.toBits()}"
             Session(
                 date,
                 steps,
