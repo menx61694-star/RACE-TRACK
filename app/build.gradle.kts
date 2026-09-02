@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -42,7 +43,6 @@ dependencies {
     implementation("org.osmdroid:osmdroid-android:6.1.20")
 
     // Phase 2: Firebase Authentication + Cloud Firestore.
-    // Firebase Android BoM keeps the Firebase libraries on compatible versions.
     implementation(platform("com.google.firebase:firebase-bom:34.18.0"))
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
