@@ -26,7 +26,8 @@ class LocationTracker(private val context: Context) {
         val currentSpeedMps: Float = 0f,
         val averageSpeedMps: Float = 0f,
         val accuracyMeters: Float = 0f,
-        val route: List<Location> = emptyList()
+        val route: List<Location> = emptyList(),
+        val currentLocation: Location? = null
     )
 
     private val client: FusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(context)
@@ -35,7 +36,12 @@ class LocationTracker(private val context: Context) {
     private var statusCallback: ((String) -> Unit)? = null
     private var active = false
     private var paused = false
-    private var lastLocation: Location? = null
+
+    // Tracking anchor: only high-quality fixes are allowed to change this.
+    private var lastTrackingLocation: Location? = null
+    // Display location: can be a less-accurate fix so the user gets a location quickly.
+    private var currentLocation: Location? = null
+
     private var totalMeters = 0f
     private var elapsedSeconds = 0L
     private val routePoints = mutableListOf<Location>()
@@ -134,15 +140,18 @@ class LocationTracker(private val context: Context) {
             .addOnFailureListener { error -> statusCallback?.invoke("GPS updates failed: ${error.javaClass.simpleName}") }
 
         client.lastLocation.addOnSuccessListener { location ->
-            if (!active || paused || location == null || lastLocation != null) return@addOnSuccessListener
-            if (location.accuracy in 0.1f..100f && System.currentTimeMillis() - location.time <= 120_000L) acceptLocation(location, initial = true)
+            if (!active || paused || location == null || currentLocation != null) return@addOnSuccessListener
+            if (location.accuracy in 0.1f..50f && System.currentTimeMillis() - location.time <= 120_000L) {
+                acceptLocation(location, initial = true)
+            }
         }
     }
 
     private fun resetSession() {
         active = false
         paused = false
-        lastLocation = null
+        lastTrackingLocation = null
+        currentLocation = null
         totalMeters = 0f
         elapsedSeconds = 0L
         routePoints.clear()
@@ -164,7 +173,7 @@ class LocationTracker(private val context: Context) {
     fun addElapsedSeconds(seconds: Long) {
         if (!active || paused) return
         elapsedSeconds = max(0L, seconds)
-        publish(lastLocation?.speedOrZero() ?: 0f)
+        publish(lastTrackingLocation?.speedOrZero() ?: 0f)
     }
 
     @SuppressLint("MissingPermission")
@@ -172,8 +181,7 @@ class LocationTracker(private val context: Context) {
         if (!active || paused) return
         paused = true
         client.removeLocationUpdates(locationCallback)
-        // Keep the last accepted point so resume does not create an artificial
-        // jump or reset the distance reference.
+        // Keep the tracking anchor so resume cannot create an artificial distance jump.
     }
 
     @SuppressLint("MissingPermission")
@@ -189,32 +197,39 @@ class LocationTracker(private val context: Context) {
         client.removeLocationUpdates(locationCallback)
         callback = null
         statusCallback = null
-        lastLocation = null
+        lastTrackingLocation = null
+        currentLocation = null
     }
 
     private fun acceptLocation(location: Location, initial: Boolean) {
-        // A GPS accuracy value is a radius estimate, not exact position error.
-        // Use tighter limits for tracking so noisy fixes do not become route lines.
-        val maxAccuracy = if (initial) 30f else 25f
-        if (location.accuracy <= 0f || location.accuracy > maxAccuracy) {
+        // Acquisition/display threshold is intentionally looser than the tracking threshold.
+        // A 50 m fix can show the user where the phone is, but it cannot add route distance.
+        val acquisitionMaxAccuracy = 50f
+        if (location.accuracy <= 0f || location.accuracy > acquisitionMaxAccuracy) {
             statusCallback?.invoke("GPS accuracy is too low (${location.accuracy.roundToInt()} m)")
             return
         }
 
-        val previous = lastLocation
+        currentLocation = Location(location)
+
+        // Only <=25 m fixes become tracking points and can affect 400/800/1000 m distance.
+        val trackingMaxAccuracy = 25f
+        val previous = lastTrackingLocation
+        if (location.accuracy > trackingMaxAccuracy) {
+            statusCallback?.invoke("GPS ± ${location.accuracy.roundToInt()} m • waiting for accurate tracking fix")
+            publish(location.speedOrZero())
+            return
+        }
+
         if (previous != null) {
             val dt = ((location.time - previous.time).coerceAtLeast(500L)) / 1000f
             val segment = previous.distanceTo(location)
-            val reportedSpeed = location.speedOrZero()
 
-            // Ignore sub-resolution GPS jitter. The threshold scales with the
-            // reported accuracy, so a 9 m fix cannot create lots of fake 1-3 m
-            // movement while the phone is stationary.
-            val movementThreshold = max(3f, max(previous.accuracy, location.accuracy) * 0.75f)
+            val movementThreshold = max(
+                3f,
+                max(previous.accuracy, location.accuracy) * 0.75f
+            )
 
-            // If the device does not provide a reliable speed, use a conservative
-            // upper bound. Real walking/running fixes with reported speed can use
-            // the larger running bound below.
             val maxSpeed = if (location.hasSpeed() && location.speed >= 0f) {
                 max(12f, location.speed + 6f)
             } else {
@@ -224,12 +239,14 @@ class LocationTracker(private val context: Context) {
 
             if (segment > maxSegment) {
                 statusCallback?.invoke("GPS jump ignored")
+                publish(location.speedOrZero())
                 return
             }
+
             if (segment >= movementThreshold) totalMeters += segment
         }
 
-        lastLocation = Location(location)
+        lastTrackingLocation = Location(location)
         routePoints.add(Location(location))
         if (routePoints.size > 2000) routePoints.removeAt(0)
         statusCallback?.invoke("GPS ± ${location.accuracy.roundToInt()} m")
@@ -238,8 +255,15 @@ class LocationTracker(private val context: Context) {
 
     private fun publish(speed: Float) {
         val average = if (elapsedSeconds > 0) totalMeters / elapsedSeconds else 0f
-        val accuracy = lastLocation?.accuracy ?: 0f
-        snapshot = Snapshot(totalMeters, speed, average, accuracy, routePoints.toList())
+        val accuracy = currentLocation?.accuracy ?: 0f
+        snapshot = Snapshot(
+            distanceMeters = totalMeters,
+            currentSpeedMps = speed,
+            averageSpeedMps = average,
+            accuracyMeters = accuracy,
+            route = routePoints.toList(),
+            currentLocation = currentLocation?.let { Location(it) }
+        )
         callback?.invoke(snapshot)
     }
 
