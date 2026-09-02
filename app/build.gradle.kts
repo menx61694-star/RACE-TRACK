@@ -40,5 +40,17 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("com.google.android.gms:play-services-location:21.4.0")
     implementation("org.osmdroid:osmdroid-android:6.1.20")
+
+    // Phase 2: Firebase Authentication + Cloud Firestore.
+    // Firebase Android BoM keeps the Firebase libraries on compatible versions.
+    implementation(platform("com.google.firebase:firebase-bom:34.18.0"))
+    implementation("com.google.firebase:firebase-auth")
+    implementation("com.google.firebase:firebase-firestore")
+
+    // Google sign-in uses Android Credential Manager with Firebase Auth.
+    implementation("androidx.credentials:credentials:1.3.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
