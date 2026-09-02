@@ -92,7 +92,7 @@ private fun ProductionRoot() {
         when {
             setupProfile && profile.isComplete -> { setupProfile = false; screen = "profile" }
             setupProfile -> Unit
-            screen == "settings" -> screen = "profile"
+            screen == "settings" || screen == "account" -> screen = "profile"
             screen == "live" -> Unit
             screen == "replay" -> screen = "home"
             screen == "history" -> screen = "analytics"
@@ -118,7 +118,7 @@ private fun ProductionRoot() {
             return@MaterialTheme
         }
         Scaffold(containerColor = Charcoal, bottomBar = {
-            if (screen != "live" && screen != "settings" && screen != "replay" && screen != "history") NavigationBar(containerColor = Card) {
+            if (screen != "live" && screen != "settings" && screen != "account" && screen != "replay" && screen != "history") NavigationBar(containerColor = Card) {
                 NavItem("home", Icons.Default.Home, "Home", screen) { screen = it }
                 NavItem("analytics", Icons.Default.BarChart, "Stats", screen) { screen = it }
                 NavItem("community", Icons.Default.EmojiEvents, "Community", screen) { screen = it }
@@ -151,7 +151,8 @@ private fun ProductionRoot() {
                     "analytics" -> Phase2AnalyticsScreen(stepStore, workoutStore)
                     "community" -> CommunityScreen()
                     "profile" -> Phase2ProfileScreen(profile, onEdit = { setupProfile = true }, onSettings = { screen = "settings" })
-                    "settings" -> Phase2SettingsScreen(context, onEditProfile = { setupProfile = true }, onBack = { screen = "profile" })
+                    "settings" -> Phase2SettingsScreen(context, onEditProfile = { setupProfile = true }, onAccountSync = { screen = "account" }, onBack = { screen = "profile" })
+                    "account" -> GoogleAuthScreen(profile, workoutStore) { screen = "settings" }
                 }
             }
         }
