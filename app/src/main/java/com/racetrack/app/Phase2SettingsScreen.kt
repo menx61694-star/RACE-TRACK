@@ -23,7 +23,12 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 
 @Composable
-fun Phase2SettingsScreen(context: Context, onEditProfile: () -> Unit, onBack: () -> Unit) {
+fun Phase2SettingsScreen(
+    context: Context,
+    onEditProfile: () -> Unit,
+    onAccountSync: () -> Unit,
+    onBack: () -> Unit
+) {
     val activity = ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
     val location = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -32,6 +37,7 @@ fun Phase2SettingsScreen(context: Context, onEditProfile: () -> Unit, onBack: ()
         item { SettingCard("Step tracking", if (activity) "Active • Activity recognition allowed" else "Permission required") }
         item { SettingCard("GPS tracking", if (location) "Ready • Location permission allowed" else "Permission required") }
         item { Button(onClick = onEditProfile, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Card)) { Text("Edit profile", color = Color.White) } }
+        item { Button(onClick = onAccountSync, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Card)) { Text("Account & cloud sync", color = Color.White) } }
         item { Button(onClick = onBack, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Charcoal)) { Text("Back to profile") } }
     }
 }
