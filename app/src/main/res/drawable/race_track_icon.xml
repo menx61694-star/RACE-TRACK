@@ -1,17 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="512" android:viewportHeight="512">
-    <path android:fillColor="#FFFFFF" android:pathData="M64,0 L448,0 Q512,0 512,64 L512,448 Q512,512 448,512 L64,512 Q0,512 0,448 L0,64 Q0,0 64,0 Z"/>
-    <path android:fillColor="#5B2AA8" android:pathData="M116,350 C75,245 116,126 226,92 C306,67 390,96 432,162 C449,188 459,220 462,253 L416,258 C410,209 384,169 346,145 C304,118 253,113 209,130 C133,159 107,240 157,319 Z"/>
-    <path android:fillColor="#D800C8" android:pathData="M93,348 C59,253 84,151 161,100 C218,62 292,55 356,83 L334,123 C283,101 226,105 183,134 C125,174 111,254 137,324 Z"/>
-    <path android:fillColor="#20C9D8" android:pathData="M129,384 C183,352 232,338 297,338 C360,338 405,320 431,283 C455,248 459,207 449,170 L484,202 C494,246 485,294 455,331 C418,376 362,395 300,396 C238,397 190,408 151,431 Z"/>
-    <path android:fillColor="#00B8E6" android:pathData="M151,431 C194,402 242,389 301,389 C367,389 417,370 450,329 L466,355 C426,402 367,423 300,423 C241,423 196,434 158,457 Z"/>
-    <path android:fillColor="#5B2AA8" android:pathData="M244,172 C258,154 283,145 304,154 C323,162 330,183 322,202 C314,222 291,231 271,223 C250,215 237,192 244,172 Z"/>
-    <path android:fillColor="#D800C8" android:pathData="M244,221 L276,238 L320,226 L350,249 L317,272 L276,266 L254,309 L217,291 L238,253 L212,239 Z"/>
-    <path android:fillColor="#5B2AA8" android:pathData="M254,269 L285,286 L266,333 L229,382 C219,394 200,396 189,386 C178,377 179,360 188,349 L225,304 Z"/>
-    <path android:fillColor="#5B2AA8" android:pathData="M302,271 L334,287 L359,333 L346,354 L318,344 L294,314 Z"/>
-    <path android:fillColor="#D800C8" android:pathData="M421,78 L421,150 L445,169 L469,150 L493,169 L493,78 Z"/>
-    <path android:fillColor="#5B2AA8" android:pathData="M75,398 L157,398 L157,420 L128,420 L128,447 L76,447 Z"/>
-    <path android:fillColor="#D800C8" android:pathData="M157,398 L210,398 L210,420 L157,420 Z"/>
-    <path android:fillColor="#5B2AA8" android:pathData="M320,398 L402,398 L402,420 L374,420 L374,447 L321,447 Z"/>
-    <path android:fillColor="#20C9D8" android:pathData="M401,398 L458,398 L458,420 L401,420 Z"/>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <!-- Rounded white app-icon background -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M88,0 L424,0 C473,0 512,39 512,88 L512,424 C512,473 473,512 424,512 L88,512 C39,512 0,473 0,424 L0,88 C0,39 39,0 88,0 Z"/>
+
+    <!-- Magenta outer arc -->
+    <path android:fillColor="#EC00C8" android:pathData="M104,354 C63,250 91,142 176,88 C238,49 314,48 374,78 L348,121 C302,100 248,104 205,130 C139,169 116,251 151,326 Z"/>
+
+    <!-- Purple inner arc -->
+    <path android:fillColor="#4B24A5" android:pathData="M128,352 C104,266 133,181 205,139 C258,108 323,110 370,140 C414,168 439,214 442,267 L396,268 C393,229 375,196 345,176 C311,153 266,151 229,173 C181,201 159,258 176,318 Z"/>
+
+    <!-- Cyan running track / swoosh -->
+    <path android:fillColor="#20D5D4" android:pathData="M128,389 C184,350 239,338 303,340 C363,342 405,320 426,283 C445,249 447,211 435,181 C460,194 478,216 486,242 C488,282 472,322 442,350 C407,383 359,397 301,397 C238,397 190,412 145,440 Z"/>
+    <path android:fillColor="#6D2BC1" android:pathData="M145,440 C190,412 239,399 301,399 C363,399 413,382 445,348 L464,370 C422,415 367,433 302,433 C245,433 200,444 161,466 Z"/>
+
+    <!-- Runner head -->
+    <path android:fillColor="#D800C8" android:pathData="M265,167 C273,151 292,142 310,148 C329,154 339,173 333,191 C327,210 306,220 287,214 C268,208 257,187 265,167 Z"/>
+
+    <!-- Runner torso and arms -->
+    <path android:fillColor="#B600C9" android:pathData="M235,215 L274,229 L306,216 L326,238 L302,255 L270,250 L248,287 L211,270 L231,240 L209,230 Z"/>
+    <path android:fillColor="#5226A8" android:pathData="M299,224 L327,210 L344,230 L375,213 C386,207 399,213 402,225 C405,236 399,246 389,251 L350,269 L327,253 Z"/>
+
+    <!-- Runner legs -->
+    <path android:fillColor="#4B24A5" android:pathData="M247,268 L279,284 L260,327 L225,373 C216,385 199,388 187,379 C176,371 175,355 184,344 L220,299 Z"/>
+    <path android:fillColor="#4B24A5" android:pathData="M282,275 L316,284 L351,328 L340,353 L313,342 L286,315 L265,297 Z"/>
+
+    <!-- Finish flag -->
+    <path android:fillColor="#4B24A5" android:pathData="M405,80 L405,178 L425,193 L445,178 L465,193 L465,80 Z"/>
+    <path android:fillColor="#20D5D4" android:pathData="M445,80 L445,178 L465,193 L465,80 Z"/>
+
+    <!-- Track shoes / speed marks -->
+    <path android:fillColor="#4B24A5" android:pathData="M70,400 L150,400 L150,422 L124,422 L124,450 L70,450 Z"/>
+    <path android:fillColor="#D800C8" android:pathData="M150,400 L207,400 L207,422 L150,422 Z"/>
+    <path android:fillColor="#4B24A5" android:pathData="M312,400 L395,400 L395,422 L369,422 L369,450 L312,450 Z"/>
+    <path android:fillColor="#20D5D4" android:pathData="M395,400 L458,400 L458,422 L395,422 Z"/>
 </vector>
