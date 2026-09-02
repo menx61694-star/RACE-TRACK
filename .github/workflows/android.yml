@@ -12,6 +12,7 @@ on:
       - fix/gps-map-laps-v3
       - fix/gps-satellite-location-v4
       - fix/map-crash-stability-v6
+      - feature/animated-route-post
   pull_request:
     branches: [ main ]
   workflow_dispatch:
