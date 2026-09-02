@@ -13,6 +13,7 @@ on:
       - fix/gps-satellite-location-v4
       - fix/map-crash-stability-v6
       - feature/animated-route-post
+      - feature/profile-local-history
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -53,7 +54,6 @@ jobs:
           curl -fsSL https://services.gradle.org/distributions/gradle-8.9-bin.zip -o /tmp/gradle.zip
           sudo unzip -q /tmp/gradle.zip -d /opt
           echo "/opt/gradle-8.9/bin" >> "$GITHUB_PATH"
-      # Build after the latest Kotlin fixes.
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace --no-daemon
       - name: Upload debug APK
