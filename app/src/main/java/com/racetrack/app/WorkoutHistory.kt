@@ -70,7 +70,7 @@ fun WorkoutHistoryScreen(workoutStore: WorkoutStore, onReplay: (WorkoutStore.Ses
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 HistoryStat("Steps", session.steps.toString())
                                 HistoryStat("Distance", "%.2f km".format(session.distanceMeters / 1000f))
-                                HistoryStat("Time", formatWorkoutDuration(session.durationSeconds))
+                                HistoryStat("Time", formatWorkoutDurationForHistory(session.durationSeconds))
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Text("${session.calories.toInt()} kcal  •  ${session.laps.size} laps  •  ${session.route.size} GPS points", color = Muted, fontSize = 11.sp)
@@ -87,6 +87,14 @@ fun WorkoutHistoryScreen(workoutStore: WorkoutStore, onReplay: (WorkoutStore.Ses
             }
         }
     }
+}
+
+private fun formatWorkoutDurationForHistory(seconds: Long): String {
+    val safeSeconds = seconds.coerceAtLeast(0L)
+    val hours = safeSeconds / 3600L
+    val minutes = (safeSeconds % 3600L) / 60L
+    val secs = safeSeconds % 60L
+    return if (hours > 0L) "%d:%02d:%02d".format(hours, minutes, secs) else "%02d:%02d".format(minutes, secs)
 }
 
 @Composable
