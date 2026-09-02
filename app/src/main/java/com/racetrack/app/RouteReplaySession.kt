@@ -10,6 +10,7 @@ object RouteReplaySession {
         private set
     var durationSeconds: Long = 0L
         private set
+    var activity: String = "Walk"
 
     fun update(route: List<Location>, distanceMeters: Float, durationSeconds: Long) {
         this.route = route.map { Location(it) }
@@ -17,9 +18,14 @@ object RouteReplaySession {
         this.durationSeconds = durationSeconds
     }
 
+    fun setActivity(activity: String) {
+        this.activity = activity
+    }
+
     fun clear() {
         route = emptyList()
         distanceMeters = 0f
         durationSeconds = 0L
+        activity = "Walk"
     }
 }
