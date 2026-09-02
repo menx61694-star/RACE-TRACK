@@ -14,6 +14,21 @@ class ProfileStore(context: Context) {
     val updatedAt: Long get() = prefs.getLong("updated_at", 0L)
 
     fun save(name: String, heightCm: Float, weightKg: Float, age: Int, dailyGoal: Int) {
+        saveInternal(name, heightCm, weightKg, age, dailyGoal, System.currentTimeMillis())
+    }
+
+    fun restore(name: String, heightCm: Float, weightKg: Float, age: Int, dailyGoal: Int, updatedAt: Long) {
+        saveInternal(name, heightCm, weightKg, age, dailyGoal, updatedAt)
+    }
+
+    private fun saveInternal(
+        name: String,
+        heightCm: Float,
+        weightKg: Float,
+        age: Int,
+        dailyGoal: Int,
+        updatedAt: Long
+    ) {
         require(name.isNotBlank()) { "Name cannot be blank" }
         require(heightCm in 100f..250f) { "Height must be between 100 and 250 cm" }
         require(weightKg in 25f..300f) { "Weight must be between 25 and 300 kg" }
@@ -26,7 +41,7 @@ class ProfileStore(context: Context) {
             .putFloat("weight_kg", weightKg)
             .putInt("age", age)
             .putInt("daily_goal", dailyGoal)
-            .putLong("updated_at", System.currentTimeMillis())
+            .putLong("updated_at", updatedAt)
             .putBoolean("complete", true)
             .apply()
     }
