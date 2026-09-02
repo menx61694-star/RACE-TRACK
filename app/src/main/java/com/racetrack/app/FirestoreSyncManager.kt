@@ -115,7 +115,7 @@ class FirestoreSyncManager {
                     val age = (snapshot.getLong("age") ?: 0L).toInt()
                     val goal = (snapshot.getLong("dailyGoal") ?: 10000L).toInt()
                     if (name.isNotBlank()) {
-                        runCatching { profile.save(name, height, weight, age, goal) }
+                        runCatching { profile.restore(name, height, weight, age, goal, cloudUpdatedAt) }
                     }
                 }
                 restoreWorkoutsAndUpload(profile, workoutStore, onComplete)
