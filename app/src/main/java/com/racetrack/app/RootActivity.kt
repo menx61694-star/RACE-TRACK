@@ -94,6 +94,7 @@ private fun ProductionRoot() {
             screen == "settings" -> screen = "profile"
             screen == "live" -> Unit
             screen == "replay" -> screen = "home"
+            screen == "history" -> screen = "analytics"
             screen != "home" -> screen = "home"
             else -> Unit
         }
@@ -112,7 +113,7 @@ private fun ProductionRoot() {
             return@MaterialTheme
         }
         Scaffold(containerColor = Charcoal, bottomBar = {
-            if (screen != "live" && screen != "settings" && screen != "replay") NavigationBar(containerColor = Card) {
+            if (screen != "live" && screen != "settings" && screen != "replay" && screen != "history") NavigationBar(containerColor = Card) {
                 NavItem("home", Icons.Default.Home, "Home", screen) { screen = it }
                 NavItem("analytics", Icons.Default.BarChart, "Stats", screen) { screen = it }
                 NavItem("community", Icons.Default.EmojiEvents, "Community", screen) { screen = it }
@@ -124,11 +125,18 @@ private fun ProductionRoot() {
                     "home" -> {
                         Box(Modifier.fillMaxSize()) {
                             Phase2HomeScreen(todaySteps, profile, workoutStore) { screen = "live" }
-                            if (RouteReplaySession.route.isNotEmpty()) {
-                                Button(
-                                    onClick = { screen = "replay" },
-                                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp).height(52.dp)
-                                ) { Text("▶  Replay last route") }
+                            Column(
+                                Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(onClick = { screen = "history" }, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                                    Text("Workout History")
+                                }
+                                if (RouteReplaySession.route.isNotEmpty()) {
+                                    Button(onClick = { screen = "replay" }, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                                        Text("▶  Replay last route")
+                                    }
+                                }
                             }
                         }
                     }
@@ -145,6 +153,11 @@ private fun ProductionRoot() {
                         activity = RouteReplaySession.activity,
                         onDone = { screen = "home" }
                     )
+                    "history" -> WorkoutHistoryScreen(workoutStore) { session ->
+                        RouteReplaySession.update(session.route, session.distanceMeters, session.durationSeconds)
+                        RouteReplaySession.setActivity(session.activity)
+                        screen = "replay"
+                    }
                     "analytics" -> Phase2AnalyticsScreen(stepStore, workoutStore)
                     "community" -> CommunityScreen()
                     "profile" -> Phase2ProfileScreen(profile, onEdit = { setupProfile = true }, onSettings = { screen = "settings" })
