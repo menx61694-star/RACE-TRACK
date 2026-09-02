@@ -5,7 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
+import androidx.activity.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -90,6 +90,7 @@ private fun ProductionRoot() {
 
     BackHandler {
         when {
+            setupProfile && profile.isComplete -> { setupProfile = false; screen = "profile" }
             setupProfile -> Unit
             screen == "settings" -> screen = "profile"
             screen == "live" -> Unit
@@ -109,7 +110,11 @@ private fun ProductionRoot() {
             return@MaterialTheme
         }
         if (setupProfile) {
-            ModernProfileSetupScreen(profile, onSaved = { setupProfile = false; screen = "home" })
+            RaceTrackProfileEditScreen(
+                profile,
+                onSaved = { setupProfile = false; screen = "home" },
+                onBack = { if (profile.isComplete) { setupProfile = false; screen = "profile" } }
+            )
             return@MaterialTheme
         }
         Scaffold(containerColor = Charcoal, bottomBar = {
