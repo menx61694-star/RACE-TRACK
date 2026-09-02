@@ -14,6 +14,7 @@ on:
       - fix/map-crash-stability-v6
       - feature/animated-route-post
       - feature/profile-local-history
+      - feature/firebase-auth-sync
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -54,6 +55,12 @@ jobs:
           curl -fsSL https://services.gradle.org/distributions/gradle-8.9-bin.zip -o /tmp/gradle.zip
           sudo unzip -q /tmp/gradle.zip -d /opt
           echo "/opt/gradle-8.9/bin" >> "$GITHUB_PATH"
+      - name: Inject Firebase configuration
+        env:
+          FIREBASE_GOOGLE_SERVICES_JSON: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON }}
+        run: |
+          test -n "$FIREBASE_GOOGLE_SERVICES_JSON"
+          printf '%s' "$FIREBASE_GOOGLE_SERVICES_JSON" > app/google-services.json
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace --no-daemon
       - name: Upload debug APK
@@ -62,3 +69,6 @@ jobs:
           name: race-track-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+      - name: Remove Firebase configuration
+        if: always()
+        run: rm -f app/google-services.json
