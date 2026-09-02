@@ -11,6 +11,7 @@ object RouteReplaySession {
     var durationSeconds: Long = 0L
         private set
     var activity: String = "Walk"
+        private set
 
     fun update(route: List<Location>, distanceMeters: Float, durationSeconds: Long) {
         this.route = route.map { Location(it) }
