@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.EmojiEvents
@@ -91,6 +93,8 @@ private fun ProductionRoot() {
             setupProfile -> Unit
             screen == "settings" -> screen = "profile"
             screen == "live" -> Unit
+            screen == "replay" -> screen = "home"
+            screen == "history" -> screen = "analytics"
             screen != "home" -> screen = "home"
             else -> Unit
         }
@@ -109,7 +113,7 @@ private fun ProductionRoot() {
             return@MaterialTheme
         }
         Scaffold(containerColor = Charcoal, bottomBar = {
-            if (screen != "live" && screen != "settings") NavigationBar(containerColor = Card) {
+            if (screen != "live" && screen != "settings" && screen != "replay" && screen != "history") NavigationBar(containerColor = Card) {
                 NavItem("home", Icons.Default.Home, "Home", screen) { screen = it }
                 NavItem("analytics", Icons.Default.BarChart, "Stats", screen) { screen = it }
                 NavItem("community", Icons.Default.EmojiEvents, "Community", screen) { screen = it }
@@ -118,11 +122,41 @@ private fun ProductionRoot() {
         }) { padding ->
             Box(Modifier.padding(padding)) {
                 when (screen) {
-                    "home" -> Phase2HomeScreen(todaySteps, profile, workoutStore) { screen = "live" }
+                    "home" -> {
+                        Box(Modifier.fillMaxSize()) {
+                            Phase2HomeScreen(todaySteps, profile, workoutStore) { screen = "live" }
+                            Column(
+                                Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(onClick = { screen = "history" }, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                                    Text("Workout History")
+                                }
+                                if (RouteReplaySession.route.isNotEmpty()) {
+                                    Button(onClick = { screen = "replay" }, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                                        Text("▶  Replay last route")
+                                    }
+                                }
+                            }
+                        }
+                    }
                     "live" -> Phase2LiveScreen(profile, tracker) { steps, duration, distance, calories, activity, laps ->
                         workoutStore.saveSession(steps, duration, distance, calories, activity, laps)
+                        RouteReplaySession.setActivity(activity)
                         tracker.stop()
                         screen = "home"
+                    }
+                    "replay" -> AnimatedRoutePostScreen(
+                        route = RouteReplaySession.route,
+                        distanceMeters = RouteReplaySession.distanceMeters,
+                        durationSeconds = RouteReplaySession.durationSeconds,
+                        activity = RouteReplaySession.activity,
+                        onDone = { screen = "home" }
+                    )
+                    "history" -> WorkoutHistoryScreen(workoutStore) { session ->
+                        RouteReplaySession.update(session.route, session.distanceMeters, session.durationSeconds)
+                        RouteReplaySession.setActivity(session.activity)
+                        screen = "replay"
                     }
                     "analytics" -> Phase2AnalyticsScreen(stepStore, workoutStore)
                     "community" -> CommunityScreen()

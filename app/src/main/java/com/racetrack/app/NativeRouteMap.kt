@@ -1,5 +1,6 @@
 package com.racetrack.app
 
+import android.content.Context
 import android.location.Location
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,7 +34,7 @@ import org.osmdroid.views.overlay.Polyline
 // ArcGIS REST uses level/row/column (z/y/x), while osmdroid's XYTileSource
 // normally generates z/x/y. Use an explicit tile source so requests are correct.
 private val WORLD_SATELLITE = object : OnlineTileSourceBase(
-    "World Satellite ArcGIS Fixed v3",
+    "World Satellite ArcGIS Fixed v4",
     0,
     17,
     256,
@@ -49,25 +50,45 @@ private val WORLD_SATELLITE = object : OnlineTileSourceBase(
     }
 }
 
+private fun configurePersistentMapCache(context: Context) {
+    val appContext = context.applicationContext
+    val prefs = appContext.getSharedPreferences("osmdroid", Context.MODE_PRIVATE)
+    val configuration = Configuration.getInstance()
+    configuration.load(appContext, prefs)
+    configuration.userAgentValue = appContext.packageName
+
+    // Keep a larger on-device tile cache so already downloaded imagery is reused
+    // on the next workout instead of being fetched again.
+    configuration.setCacheMapTileCount(32)
+    configuration.setTileDownloadThreads(4)
+    configuration.setTileFileSystemThreads(8)
+    configuration.setTileDownloadMaxQueueSize(80)
+    configuration.setTileFileSystemMaxQueueSize(80)
+    configuration.setTileFileSystemCacheMaxBytes(1024L * 1024L * 1024L)
+    configuration.setTileFileSystemCacheTrimBytes(900L * 1024L * 1024L)
+    configuration.setMapViewHardwareAccelerated(true)
+    configuration.save(appContext, prefs)
+}
+
 @Composable
 fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var hasCenteredOnLocation by remember { mutableStateOf(false) }
+    var renderedRouteKey by remember { mutableStateOf<String?>(null) }
+
+    // The last completed workout is our instant map fallback. This lets the
+    // map open around the user's familiar/last GPS area before the new GPS fix arrives.
+    val previousRoute = remember(context) {
+        WorkoutStore(context).sessions().lastOrNull()?.route ?: emptyList()
+    }
 
     Box(modifier) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = {
-                Configuration.getInstance().load(
-                    context.applicationContext,
-                    context.applicationContext.getSharedPreferences(
-                        "osmdroid",
-                        android.content.Context.MODE_PRIVATE
-                    )
-                )
-                Configuration.getInstance().userAgentValue = context.packageName
+                configurePersistentMapCache(context)
 
                 MapView(context).apply {
                     setTileSource(WORLD_SATELLITE)
@@ -76,8 +97,6 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
                     setBuiltInZoomControls(false)
                     isTilesScaledToDpi = true
                     minZoomLevel = 3.0
-                    // Deliberately cap at the highest verified ArcGIS level for
-                    // this app so a pinch-to-max zoom cannot enter blank tiles.
                     maxZoomLevel = 17.0
                     controller.setZoom(15.0)
                     onResume()
@@ -85,36 +104,54 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
                 }
             },
             update = { map ->
-                map.overlays.removeAll { it is Polyline || it is Marker }
-
-                if (route.isNotEmpty()) {
-                    val points = route.map { GeoPoint(it.latitude, it.longitude) }
-
-                    map.overlays.add(Polyline(map).apply {
-                        setPoints(points)
-                        setColor(android.graphics.Color.rgb(0, 230, 118))
-                        setWidth(9f)
-                    })
-
-                    val last = points.last()
-                    map.overlays.add(Marker(map).apply {
-                        position = last
-                        icon = ContextCompat.getDrawable(context, R.drawable.current_location_marker)
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                        title = "Current location"
-                        snippet = "GPS position"
-                    })
-
-                    if (!hasCenteredOnLocation) {
-                        map.controller.setZoom(16.0)
-                        map.controller.setCenter(last)
-                        hasCenteredOnLocation = true
-                    }
-                } else {
-                    hasCenteredOnLocation = false
+                // Until the new GPS fix arrives, use the previous session's route
+                // as the map's startup context. Once GPS provides a new route,
+                // switch immediately to the current session.
+                val usingPreviousRoute = route.isEmpty() && previousRoute.isNotEmpty()
+                val displayRoute = if (usingPreviousRoute) previousRoute else route
+                val currentKey = if (displayRoute.isEmpty()) "empty" else {
+                    val first = displayRoute.first()
+                    val last = displayRoute.last()
+                    "${displayRoute.size}:${first.latitude}:${first.longitude}:${last.latitude}:${last.longitude}:$usingPreviousRoute"
                 }
 
-                map.invalidate()
+                if (currentKey != renderedRouteKey) {
+                    map.overlays.removeAll { it is Polyline || it is Marker }
+
+                    if (displayRoute.isNotEmpty()) {
+                        val points = displayRoute.map { GeoPoint(it.latitude, it.longitude) }
+
+                        map.overlays.add(Polyline(map).apply {
+                            setPoints(points)
+                            setColor(android.graphics.Color.rgb(0, 230, 118))
+                            setWidth(9f)
+                        })
+
+                        // Only point out the CURRENT GPS location. The previous
+                        // session is reference context, not a fake current marker.
+                        if (!usingPreviousRoute) {
+                            val last = points.last()
+                            map.overlays.add(Marker(map).apply {
+                                position = last
+                                icon = ContextCompat.getDrawable(context, R.drawable.current_location_marker)
+                                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                                title = "Current location"
+                                snippet = "GPS position"
+                            })
+                        }
+
+                        if (!hasCenteredOnLocation) {
+                            map.controller.setZoom(if (usingPreviousRoute) 15.0 else 16.0)
+                            map.controller.setCenter(points.last())
+                            hasCenteredOnLocation = true
+                        }
+                    } else {
+                        hasCenteredOnLocation = false
+                    }
+
+                    renderedRouteKey = currentKey
+                    map.invalidate()
+                }
             }
         )
 

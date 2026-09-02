@@ -37,9 +37,7 @@ class LocationTracker(private val context: Context) {
     private var active = false
     private var paused = false
 
-    // Tracking anchor: only high-quality fixes are allowed to change this.
     private var lastTrackingLocation: Location? = null
-    // Display location: can be a less-accurate fix so the user gets a location quickly.
     private var currentLocation: Location? = null
 
     private var totalMeters = 0f
@@ -61,6 +59,7 @@ class LocationTracker(private val context: Context) {
         callback = onUpdate
         statusCallback = onStatus
         resetSession()
+        RouteReplaySession.clear()
         if (!hasLocationPermission()) {
             onStatus("Location permission is not granted")
             onUpdate(snapshot)
@@ -181,7 +180,6 @@ class LocationTracker(private val context: Context) {
         if (!active || paused) return
         paused = true
         client.removeLocationUpdates(locationCallback)
-        // Keep the tracking anchor so resume cannot create an artificial distance jump.
     }
 
     @SuppressLint("MissingPermission")
@@ -202,8 +200,6 @@ class LocationTracker(private val context: Context) {
     }
 
     private fun acceptLocation(location: Location, initial: Boolean) {
-        // Acquisition/display threshold is intentionally looser than the tracking threshold.
-        // A 50 m fix can show the user where the phone is, but it cannot add route distance.
         val acquisitionMaxAccuracy = 50f
         if (location.accuracy <= 0f || location.accuracy > acquisitionMaxAccuracy) {
             statusCallback?.invoke("GPS accuracy is too low (${location.accuracy.roundToInt()} m)")
@@ -212,7 +208,6 @@ class LocationTracker(private val context: Context) {
 
         currentLocation = Location(location)
 
-        // Only <=25 m fixes become tracking points and can affect 400/800/1000 m distance.
         val trackingMaxAccuracy = 25f
         val previous = lastTrackingLocation
         if (location.accuracy > trackingMaxAccuracy) {
@@ -224,17 +219,8 @@ class LocationTracker(private val context: Context) {
         if (previous != null) {
             val dt = ((location.time - previous.time).coerceAtLeast(500L)) / 1000f
             val segment = previous.distanceTo(location)
-
-            val movementThreshold = max(
-                3f,
-                max(previous.accuracy, location.accuracy) * 0.75f
-            )
-
-            val maxSpeed = if (location.hasSpeed() && location.speed >= 0f) {
-                max(12f, location.speed + 6f)
-            } else {
-                8f
-            }
+            val movementThreshold = max(3f, max(previous.accuracy, location.accuracy) * 0.75f)
+            val maxSpeed = if (location.hasSpeed() && location.speed >= 0f) max(12f, location.speed + 6f) else 8f
             val maxSegment = maxSpeed * dt + max(2f, max(previous.accuracy, location.accuracy) * 0.25f)
 
             if (segment > maxSegment) {
@@ -264,6 +250,7 @@ class LocationTracker(private val context: Context) {
             route = routePoints.toList(),
             currentLocation = currentLocation?.let { Location(it) }
         )
+        RouteReplaySession.update(snapshot.route, snapshot.distanceMeters, elapsedSeconds)
         callback?.invoke(snapshot)
     }
 
