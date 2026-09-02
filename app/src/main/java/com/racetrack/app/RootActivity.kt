@@ -109,7 +109,7 @@ private fun ProductionRoot() {
             return@MaterialTheme
         }
         if (setupProfile) {
-            ProfileSetupScreen(profile) { setupProfile = false; screen = "home" }
+            ModernProfileSetupScreen(profile, onSaved = { setupProfile = false; screen = "home" })
             return@MaterialTheme
         }
         Scaffold(containerColor = Charcoal, bottomBar = {
@@ -125,18 +125,9 @@ private fun ProductionRoot() {
                     "home" -> {
                         Box(Modifier.fillMaxSize()) {
                             Phase2HomeScreen(todaySteps, profile, workoutStore) { screen = "live" }
-                            Column(
-                                Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Button(onClick = { screen = "history" }, modifier = Modifier.fillMaxWidth().height(48.dp)) {
-                                    Text("Workout History")
-                                }
-                                if (RouteReplaySession.route.isNotEmpty()) {
-                                    Button(onClick = { screen = "replay" }, modifier = Modifier.fillMaxWidth().height(48.dp)) {
-                                        Text("▶  Replay last route")
-                                    }
-                                }
+                            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = { screen = "history" }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Workout History") }
+                                if (RouteReplaySession.route.isNotEmpty()) Button(onClick = { screen = "replay" }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("▶  Replay last route") }
                             }
                         }
                     }
@@ -146,13 +137,7 @@ private fun ProductionRoot() {
                         tracker.stop()
                         screen = "home"
                     }
-                    "replay" -> AnimatedRoutePostScreen(
-                        route = RouteReplaySession.route,
-                        distanceMeters = RouteReplaySession.distanceMeters,
-                        durationSeconds = RouteReplaySession.durationSeconds,
-                        activity = RouteReplaySession.activity,
-                        onDone = { screen = "home" }
-                    )
+                    "replay" -> AnimatedRoutePostScreen(route = RouteReplaySession.route, distanceMeters = RouteReplaySession.distanceMeters, durationSeconds = RouteReplaySession.durationSeconds, activity = RouteReplaySession.activity, onDone = { screen = "home" })
                     "history" -> WorkoutHistoryScreen(workoutStore) { session ->
                         RouteReplaySession.update(session.route, session.distanceMeters, session.durationSeconds)
                         RouteReplaySession.setActivity(session.activity)
