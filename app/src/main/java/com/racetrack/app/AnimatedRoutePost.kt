@@ -33,7 +33,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
-import kotlin.math.max
 
 /**
  * First experimental version of the Strava-style activity replay.
@@ -96,7 +95,7 @@ fun AnimatedRoutePostScreen(
                     Text("Distance", color = Muted, fontSize = 11.sp)
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                    Text(formatWorkoutDuration(durationSeconds), color = Color.White, fontSize = 20.sp)
+                    Text(formatReplayDuration(durationSeconds), color = Color.White, fontSize = 20.sp)
                     Text("Time", color = Muted, fontSize = 11.sp)
                 }
             }
@@ -122,4 +121,13 @@ fun AnimatedRoutePostScreen(
             }
         }
     }
+}
+
+private fun formatReplayDuration(seconds: Long): String {
+    val safe = seconds.coerceAtLeast(0L)
+    val hours = safe / 3600L
+    val minutes = (safe % 3600L) / 60L
+    val secs = safe % 60L
+    return if (hours > 0L) "%d:%02d:%02d".format(hours, minutes, secs)
+    else "%02d:%02d".format(minutes, secs)
 }
