@@ -5,37 +5,48 @@
     android:viewportWidth="512"
     android:viewportHeight="512">
 
-    <!-- Rounded white app-icon background -->
-    <path android:fillColor="#FFFFFFFF" android:pathData="M88,0 L424,0 C473,0 512,39 512,88 L512,424 C512,473 473,512 424,512 L88,512 C39,512 0,473 0,424 L0,88 C0,39 39,0 88,0 Z"/>
+    <!-- RACE-TRACK turtle app icon -->
+    <path android:fillColor="#003D32" android:pathData="M88,0 L424,0 C473,0 512,39 512,88 L512,424 C512,473 473,512 424,512 L88,512 C39,512 0,473 0,424 L0,88 C0,39 39,0 88,0 Z"/>
 
-    <!-- Magenta outer arc -->
-    <path android:fillColor="#EC00C8" android:pathData="M104,354 C63,250 91,142 176,88 C238,49 314,48 374,78 L348,121 C302,100 248,104 205,130 C139,169 116,251 151,326 Z"/>
+    <!-- Speed ring -->
+    <path android:fillColor="#B7F21D" android:pathData="M224,63 C285,42 355,53 404,92 C456,133 481,196 474,260 C466,339 414,401 342,427 C276,450 202,438 149,397 L170,370 C215,405 278,415 334,396 C394,376 438,324 445,258 C451,207 430,157 389,124 C349,92 292,82 238,101 Z"/>
+    <path android:fillColor="#25D47A" android:pathData="M342,427 C273,450 199,436 149,397 L162,375 C214,412 278,418 334,396 Z"/>
 
-    <!-- Purple inner arc -->
-    <path android:fillColor="#4B24A5" android:pathData="M128,352 C104,266 133,181 205,139 C258,108 323,110 370,140 C414,168 439,214 442,267 L396,268 C393,229 375,196 345,176 C311,153 266,151 229,173 C181,201 159,258 176,318 Z"/>
+    <!-- Motion marks -->
+    <path android:fillColor="#B7F21D" android:pathData="M45,221 L154,221 L154,235 L45,235 Z"/>
+    <path android:fillColor="#75C923" android:pathData="M62,263 L143,263 L143,276 L62,276 Z"/>
+    <path android:fillColor="#B7F21D" android:pathData="M78,304 L151,304 L151,317 L78,317 Z"/>
+    <path android:fillColor="#79D52B" android:pathData="M91,183 L163,215 L157,227 L85,195 Z"/>
 
-    <!-- Cyan running track / swoosh -->
-    <path android:fillColor="#20D5D4" android:pathData="M128,389 C184,350 239,338 303,340 C363,342 405,320 426,283 C445,249 447,211 435,181 C460,194 478,216 486,242 C488,282 472,322 442,350 C407,383 359,397 301,397 C238,397 190,412 145,440 Z"/>
-    <path android:fillColor="#6D2BC1" android:pathData="M145,440 C190,412 239,399 301,399 C363,399 413,382 445,348 L464,370 C422,415 367,433 302,433 C245,433 200,444 161,466 Z"/>
+    <!-- Turtle shell -->
+    <path android:fillColor="#2E6F20" android:pathData="M128,294 C127,229 180,180 249,178 C319,176 373,221 378,284 C383,341 334,372 254,375 C178,377 132,349 128,294 Z"/>
+    <path android:fillColor="#63A824" android:pathData="M151,285 C151,234 195,200 251,199 C310,198 353,234 356,286 C358,324 323,346 255,348 C193,350 154,331 151,285 Z"/>
 
-    <!-- Runner head -->
-    <path android:fillColor="#D800C8" android:pathData="M265,167 C273,151 292,142 310,148 C329,154 339,173 333,191 C327,210 306,220 287,214 C268,208 257,187 265,167 Z"/>
+    <!-- Shell plates -->
+    <path android:fillColor="#3D7D20" android:pathData="M241,202 L285,204 L310,231 L294,263 L251,272 L216,250 L214,221 Z"/>
+    <path android:fillColor="#4B8C22" android:pathData="M164,254 L195,225 L215,250 L207,291 L175,309 L151,285 Z"/>
+    <path android:fillColor="#4A8A20" android:pathData="M294,263 L330,241 L354,274 L345,309 L316,327 L294,303 Z"/>
+    <path android:fillColor="#3B7A1D" android:pathData="M207,291 L251,272 L294,263 L294,303 L258,336 L214,330 Z"/>
 
-    <!-- Runner torso and arms -->
-    <path android:fillColor="#B600C9" android:pathData="M235,215 L274,229 L306,216 L326,238 L302,255 L270,250 L248,287 L211,270 L231,240 L209,230 Z"/>
-    <path android:fillColor="#5226A8" android:pathData="M299,224 L327,210 L344,230 L375,213 C386,207 399,213 402,225 C405,236 399,246 389,251 L350,269 L327,253 Z"/>
+    <!-- Turtle head and neck -->
+    <path android:fillColor="#91D52B" android:pathData="M343,235 C346,185 365,145 405,140 C443,135 469,159 469,194 C469,222 451,239 423,243 L405,244 C398,269 385,292 362,307 L337,285 C351,272 354,255 343,235 Z"/>
+    <path android:fillColor="#7FC52A" android:pathData="M343,235 C350,250 349,270 337,285 L318,273 C330,256 331,240 326,227 Z"/>
 
-    <!-- Runner legs -->
-    <path android:fillColor="#4B24A5" android:pathData="M247,268 L279,284 L260,327 L225,373 C216,385 199,388 187,379 C176,371 175,355 184,344 L220,299 Z"/>
-    <path android:fillColor="#4B24A5" android:pathData="M282,275 L316,284 L351,328 L340,353 L313,342 L286,315 L265,297 Z"/>
+    <!-- Eye -->
+    <path android:fillColor="#07382E" android:pathData="M420,173 C420,184 412,192 401,192 C390,192 382,184 382,173 C382,162 390,154 401,154 C412,154 420,162 420,173 Z"/>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M408,166 C408,170 405,173 401,173 C397,173 394,170 394,166 C394,162 397,159 401,159 C405,159 408,162 408,166 Z"/>
 
-    <!-- Finish flag -->
-    <path android:fillColor="#4B24A5" android:pathData="M405,80 L405,178 L425,193 L445,178 L465,193 L465,80 Z"/>
-    <path android:fillColor="#20D5D4" android:pathData="M445,80 L445,178 L465,193 L465,80 Z"/>
+    <!-- Smile -->
+    <path android:fillColor="#07382E" android:pathData="M414,213 C430,224 445,223 456,215 L460,220 C446,232 428,233 410,220 Z"/>
 
-    <!-- Track shoes / speed marks -->
-    <path android:fillColor="#4B24A5" android:pathData="M70,400 L150,400 L150,422 L124,422 L124,450 L70,450 Z"/>
-    <path android:fillColor="#D800C8" android:pathData="M150,400 L207,400 L207,422 L150,422 Z"/>
-    <path android:fillColor="#4B24A5" android:pathData="M312,400 L395,400 L395,422 L369,422 L369,450 L312,450 Z"/>
-    <path android:fillColor="#20D5D4" android:pathData="M395,400 L458,400 L458,422 L395,422 Z"/>
+    <!-- Legs -->
+    <path android:fillColor="#82C72A" android:pathData="M177,329 C157,330 143,342 132,360 C124,374 129,390 144,397 C160,405 175,397 183,384 L202,352 Z"/>
+    <path android:fillColor="#82C72A" android:pathData="M300,334 L327,347 C341,357 349,372 349,388 C349,404 337,414 322,412 C307,410 298,398 296,383 L286,350 Z"/>
+    <path android:fillColor="#82C72A" android:pathData="M340,320 C361,309 379,315 394,329 L420,352 C432,363 430,379 418,388 C406,397 391,393 381,382 L349,351 Z"/>
+    <path android:fillColor="#6DAA24" android:pathData="M218,347 L249,349 L239,379 C233,395 218,401 205,393 C193,385 192,371 202,360 Z"/>
+
+    <!-- Feet -->
+    <path android:fillColor="#DDF2A2" android:pathData="M130,376 C138,371 148,374 153,381 C158,388 154,397 146,400 C137,403 129,398 126,391 C123,385 125,379 130,376 Z"/>
+    <path android:fillColor="#DDF2A2" android:pathData="M316,393 C324,387 334,390 338,398 C342,406 337,413 329,415 C320,416 313,411 311,404 C309,399 311,396 316,393 Z"/>
+
 </vector>
