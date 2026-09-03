@@ -163,7 +163,7 @@ private fun ProductionRoot() {
                     "community" -> CommunityScreen()
                     "profile" -> Phase2ProfileScreen(profile, onEdit = { setupProfile = true }, onSettings = { screen = "settings" })
                     "settings" -> Phase2SettingsScreen(context, onEditProfile = { setupProfile = true }, onAccountSync = { screen = "account" }, onBack = { screen = "profile" })
-                    "account" -> GoogleAuthScreen(profile, workoutStore) { screen = "settings" }
+                    "account" -> GoogleAuthScreen(profile, workoutStore, onBack = { screen = "settings" }, onFinished = { screen = "home" })
                 }
             }
         }
