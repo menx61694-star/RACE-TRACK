@@ -5,13 +5,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -32,7 +30,7 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 
 @Composable
-fun WorkoutDetailsScreen(session: WorkoutStore.Session, onReplay: () -> Unit, onBack: () -> Unit) {
+fun WorkoutDetailsScreen(session: WorkoutStore.Session, onReplay: () -> Unit, onBack: () -> Unit = {}) {
     var tab by remember { mutableIntStateOf(0) }
     val paceSeconds = if (session.distanceMeters > 1f) (session.durationSeconds.toDouble() / session.distanceMeters.toDouble() * 1000.0).roundToInt() else 0
     Column(Modifier.fillMaxSize().background(Charcoal)) {
@@ -110,8 +108,8 @@ private fun ChartDetails(session: WorkoutStore.Session, paceSeconds: Int) {
 }
 
 @Composable
-private fun RowScope.DetailsTab(label: String, selected: Boolean, onClick: () -> Unit) {
-    TextButton(onClick = onClick, modifier = Modifier.weight(1f)) { Text(label, color = if (selected) Green else Muted, fontSize = 15.sp) }
+private fun DetailsTab(label: String, selected: Boolean, onClick: () -> Unit) {
+    TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth(0.5f)) { Text(label, color = if (selected) Green else Muted, fontSize = 15.sp) }
 }
 
 @Composable
