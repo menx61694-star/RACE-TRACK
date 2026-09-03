@@ -29,7 +29,6 @@ import com.maptiler.maptilersdk.map.style.MTMapReferenceStyle
 import com.maptiler.maptilersdk.helpers.MTPolylineLayerOptions
 import com.maptiler.maptilersdk.events.MTEvent
 import com.maptiler.maptilersdk.map.types.MTData
-import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URL
@@ -65,7 +64,6 @@ private fun routeGeoJson(route: List<Location>): String {
 fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
     val apiKey = BuildConfig.MAPTILER_API_KEY
     val context = androidx.compose.ui.platform.LocalContext.current
-    val scope = rememberCoroutineScope()
     val controller = remember { MTMapViewController(context) }
     var mapReady by remember { mutableStateOf(false) }
     var hasCenteredOnLocation by remember { mutableStateOf(false) }
@@ -147,8 +145,6 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
                         lineColor = "#00E676",
                         lineWidth = 5.0,
                         lineOpacity = 1.0,
-                        lineCap = com.maptiler.maptilersdk.map.style.layer.line.MTLineCap.ROUND,
-                        lineJoin = com.maptiler.maptilersdk.map.style.layer.line.MTLineJoin.ROUND,
                     )
                 )
             }
