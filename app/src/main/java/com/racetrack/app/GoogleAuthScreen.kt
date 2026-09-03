@@ -29,7 +29,8 @@ import kotlinx.coroutines.launch
 fun GoogleAuthScreen(
     profile: ProfileStore,
     workoutStore: WorkoutStore,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onFinished: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val auth = remember { FirebaseAuthManager(context) }
@@ -48,12 +49,13 @@ fun GoogleAuthScreen(
         user = auth.currentUser
     }
 
-    fun runSync() {
+    fun runSync(afterSync: (() -> Unit)? = null) {
         busy = true
         status = "Restoring and syncing…"
         sync.restoreAndSyncAll(profile, workoutStore) { success, message ->
             busy = false
             status = if (success) "Cloud sync complete" else "Sync failed: $message"
+            if (success) afterSync?.invoke()
         }
     }
 
@@ -63,7 +65,7 @@ fun GoogleAuthScreen(
     ) {
         Text("Account & Sync", color = Color.White, style = androidx.compose.material3.MaterialTheme.typography.headlineMedium)
         Text(
-            if (user == null) "Sign in to back up your profile and workout history." else "Your Race Track account is connected.",
+            if (user == null) "Sign in first, then set up your Race Track profile." else "Your Race Track account is connected.",
             color = Muted
         )
 
@@ -78,7 +80,7 @@ fun GoogleAuthScreen(
                 } else {
                     Text("Google Sign-In", color = Color.White)
                     Text(
-                        if (clientId.isBlank()) "Firebase Google Sign-In needs the updated google-services.json with OAuth client information." else "Use your Google account to enable cloud sync.",
+                        if (clientId.isBlank()) "Firebase Google Sign-In needs the updated google-services.json with OAuth client information." else "Sign in with Google to continue to your profile setup and cloud sync.",
                         color = Muted
                     )
                 }
@@ -93,10 +95,13 @@ fun GoogleAuthScreen(
                     status = "Opening Google sign-in…"
                     scope.launch {
                         auth.signInWithGoogle(clientId) { success, message ->
-                            busy = false
                             status = message
                             user = auth.currentUser
-                            if (success && user != null) runSync()
+                            if (success && user != null) {
+                                runSync { onFinished?.invoke() }
+                            } else {
+                                busy = false
+                            }
                         }
                     }
                 },
@@ -107,7 +112,7 @@ fun GoogleAuthScreen(
         } else {
             Button(
                 enabled = !busy,
-                onClick = { runSync() },
+                onClick = { runSync(onFinished) },
                 modifier = Modifier.fillMaxWidth().height(54.dp)
             ) {
                 Text(if (busy) "Syncing…" else "Restore & Sync")
