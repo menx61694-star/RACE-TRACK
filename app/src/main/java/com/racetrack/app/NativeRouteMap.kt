@@ -78,12 +78,6 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
     var hasCenteredOnLocation by remember { mutableStateOf(false) }
     var renderedRouteKey by remember { mutableStateOf<String?>(null) }
 
-    // The last completed workout is our instant map fallback. This lets the
-    // map open around the user's familiar/last GPS area before the new GPS fix arrives.
-    val previousRoute = remember(context) {
-        WorkoutStore(context).sessions().lastOrNull()?.route ?: emptyList()
-    }
-
     Box(modifier) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
@@ -104,15 +98,15 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
                 }
             },
             update = { map ->
-                // Until the new GPS fix arrives, use the previous session's route
-                // as the map's startup context. Once GPS provides a new route,
-                // switch immediately to the current session.
-                val usingPreviousRoute = route.isEmpty() && previousRoute.isNotEmpty()
-                val displayRoute = if (usingPreviousRoute) previousRoute else route
+                // Never preload or display a previous workout route here.
+                // This map belongs to the CURRENT workout only. When the route
+                // is empty, only the satellite map is shown until current GPS
+                // points arrive.
+                val displayRoute = route
                 val currentKey = if (displayRoute.isEmpty()) "empty" else {
                     val first = displayRoute.first()
                     val last = displayRoute.last()
-                    "${displayRoute.size}:${first.latitude}:${first.longitude}:${last.latitude}:${last.longitude}:$usingPreviousRoute"
+                    "${displayRoute.size}:${first.latitude}:${first.longitude}:${last.latitude}:${last.longitude}"
                 }
 
                 if (currentKey != renderedRouteKey) {
@@ -127,21 +121,18 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
                             setWidth(9f)
                         })
 
-                        // Only point out the CURRENT GPS location. The previous
-                        // session is reference context, not a fake current marker.
-                        if (!usingPreviousRoute) {
-                            val last = points.last()
-                            map.overlays.add(Marker(map).apply {
-                                position = last
-                                icon = ContextCompat.getDrawable(context, R.drawable.current_location_marker)
-                                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                                title = "Current location"
-                                snippet = "GPS position"
-                            })
-                        }
+                        // Only show the CURRENT GPS location marker.
+                        val last = points.last()
+                        map.overlays.add(Marker(map).apply {
+                            position = last
+                            icon = ContextCompat.getDrawable(context, R.drawable.current_location_marker)
+                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                            title = "Current location"
+                            snippet = "GPS position"
+                        })
 
                         if (!hasCenteredOnLocation) {
-                            map.controller.setZoom(if (usingPreviousRoute) 15.0 else 16.0)
+                            map.controller.setZoom(16.0)
                             map.controller.setCenter(points.last())
                             hasCenteredOnLocation = true
                         }
