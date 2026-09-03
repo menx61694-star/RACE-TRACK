@@ -1,6 +1,5 @@
 package com.racetrack.app
 
-import android.content.Context
 import android.location.Location
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -8,166 +7,176 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import org.osmdroid.config.Configuration
-import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
-import org.osmdroid.util.GeoPoint
-import org.osmdroid.util.MapTileIndex
-import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.Marker
-import org.osmdroid.views.overlay.Polyline
+import com.maptiler.maptilersdk.MTConfig
+import com.maptiler.maptilersdk.annotations.MTMarker
+import com.maptiler.maptilersdk.map.LngLat
+import com.maptiler.maptilersdk.map.MTMapOptions
+import com.maptiler.maptilersdk.map.MTMapView
+import com.maptiler.maptilersdk.map.MTMapViewController
+import com.maptiler.maptilersdk.map.MTMapViewDelegate
+import com.maptiler.maptilersdk.map.style.MTMapReferenceStyle
+import com.maptiler.maptilersdk.helpers.MTPolylineLayerOptions
+import com.maptiler.maptilersdk.events.MTEvent
+import com.maptiler.maptilersdk.map.types.MTData
+import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.URL
 
-// ArcGIS REST uses level/row/column (z/y/x), while osmdroid's XYTileSource
-// normally generates z/x/y. Use an explicit tile source so requests are correct.
-private val WORLD_SATELLITE = object : OnlineTileSourceBase(
-    "World Satellite ArcGIS Fixed v4",
-    0,
-    17,
-    256,
-    ".jpg",
-    arrayOf("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"),
-    "Sources: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
-) {
-    override fun getTileURLString(tileIndex: Long): String {
-        val z = MapTileIndex.getZoom(tileIndex)
-        val x = MapTileIndex.getX(tileIndex)
-        val y = MapTileIndex.getY(tileIndex)
-        return getBaseUrl() + z + "/" + y + "/" + x + ".jpg"
+private const val CUSTOM_MAP_STYLE_ID = "01a067ec-2c74-7cbd-b963-26d058d9f73d"
+private const val ROUTE_SOURCE_ID = "race-track-current-route-source"
+private const val ROUTE_LAYER_ID = "race-track-current-route-layer"
+
+private fun routeGeoJson(route: List<Location>): String {
+    val coordinates = JSONArray()
+    route.forEach { location ->
+        // GeoJSON uses [longitude, latitude]. Keep every filtered GPS point;
+        // there is deliberately no road matching or synthetic geometry here.
+        coordinates.put(JSONArray().put(location.longitude).put(location.latitude))
     }
-}
 
-private fun configurePersistentMapCache(context: Context) {
-    val appContext = context.applicationContext
-    val prefs = appContext.getSharedPreferences("osmdroid", Context.MODE_PRIVATE)
-    val configuration = Configuration.getInstance()
-    configuration.load(appContext, prefs)
-    configuration.userAgentValue = appContext.packageName
+    val geometry = JSONObject()
+        .put("type", "LineString")
+        .put("coordinates", coordinates)
 
-    // Keep a larger on-device tile cache so already downloaded imagery is reused
-    // on the next workout instead of being fetched again.
-    configuration.setCacheMapTileCount(32)
-    configuration.setTileDownloadThreads(4)
-    configuration.setTileFileSystemThreads(8)
-    configuration.setTileDownloadMaxQueueSize(80)
-    configuration.setTileFileSystemMaxQueueSize(80)
-    configuration.setTileFileSystemCacheMaxBytes(1024L * 1024L * 1024L)
-    configuration.setTileFileSystemCacheTrimBytes(900L * 1024L * 1024L)
-    configuration.setMapViewHardwareAccelerated(true)
-    configuration.save(appContext, prefs)
+    val feature = JSONObject()
+        .put("type", "Feature")
+        .put("properties", JSONObject())
+        .put("geometry", geometry)
+
+    return JSONObject()
+        .put("type", "FeatureCollection")
+        .put("features", JSONArray().put(feature))
+        .toString()
 }
 
 @Composable
 fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var mapView by remember { mutableStateOf<MapView?>(null) }
+    val apiKey = BuildConfig.MAPTILER_API_KEY
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    val controller = remember { MTMapViewController(context) }
+    var mapReady by remember { mutableStateOf(false) }
     var hasCenteredOnLocation by remember { mutableStateOf(false) }
     var renderedRouteKey by remember { mutableStateOf<String?>(null) }
+    var currentMarker by remember { mutableStateOf<MTMarker?>(null) }
 
-    Box(modifier) {
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = {
-                configurePersistentMapCache(context)
-
-                MapView(context).apply {
-                    setTileSource(WORLD_SATELLITE)
-                    setUseDataConnection(true)
-                    setMultiTouchControls(true)
-                    setBuiltInZoomControls(false)
-                    isTilesScaledToDpi = true
-                    minZoomLevel = 3.0
-                    maxZoomLevel = 17.0
-                    controller.setZoom(15.0)
-                    onResume()
-                    mapView = this
-                }
-            },
-            update = { map ->
-                // Never preload or display a previous workout route here.
-                // This map belongs to the CURRENT workout only. When the route
-                // is empty, only the satellite map is shown until current GPS
-                // points arrive.
-                val displayRoute = route
-                val currentKey = if (displayRoute.isEmpty()) "empty" else {
-                    val first = displayRoute.first()
-                    val last = displayRoute.last()
-                    "${displayRoute.size}:${first.latitude}:${first.longitude}:${last.latitude}:${last.longitude}"
-                }
-
-                if (currentKey != renderedRouteKey) {
-                    map.overlays.removeAll { it is Polyline || it is Marker }
-
-                    if (displayRoute.isNotEmpty()) {
-                        val points = displayRoute.map { GeoPoint(it.latitude, it.longitude) }
-
-                        map.overlays.add(Polyline(map).apply {
-                            setPoints(points)
-                            setColor(android.graphics.Color.rgb(0, 230, 118))
-                            setWidth(9f)
-                        })
-
-                        // Only show the CURRENT GPS location marker.
-                        val last = points.last()
-                        map.overlays.add(Marker(map).apply {
-                            position = last
-                            icon = ContextCompat.getDrawable(context, R.drawable.current_location_marker)
-                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                            title = "Current location"
-                            snippet = "GPS position"
-                        })
-
-                        if (!hasCenteredOnLocation) {
-                            map.controller.setZoom(16.0)
-                            map.controller.setCenter(points.last())
-                            hasCenteredOnLocation = true
-                        }
-                    } else {
-                        hasCenteredOnLocation = false
-                    }
-
-                    renderedRouteKey = currentKey
-                    map.invalidate()
-                }
-            }
-        )
-
-        Text(
-            "Satellite imagery • Esri / data providers",
-            modifier = Modifier.align(Alignment.BottomStart).padding(6.dp),
-            color = Color.White.copy(alpha = 0.9f),
-            fontSize = 8.sp
-        )
+    if (apiKey.isBlank()) {
+        Box(modifier, contentAlignment = Alignment.Center) {
+            Text(
+                "MapTiler API key is not configured",
+                color = Color.White,
+                fontSize = 12.sp,
+            )
+        }
+        return
     }
 
-    DisposableEffect(lifecycleOwner, mapView) {
-        val map = mapView
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_RESUME -> map?.onResume()
-                Lifecycle.Event.ON_PAUSE -> map?.onPause()
-                else -> Unit
+    // MapTiler requires the API key to be set before the first map is created.
+    MTConfig.apiKey = apiKey
+
+    LaunchedEffect(controller) {
+        controller.delegate = object : MTMapViewDelegate {
+            override fun onMapViewInitialized() {
+                mapReady = true
             }
+
+            override fun onEventTriggered(event: MTEvent, data: MTData?) = Unit
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
+    }
+
+    DisposableEffect(controller) {
         onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            map?.onPause()
-            mapView = null
+            controller.delegate = null
+            currentMarker?.remove(controller)
+            controller.destroy()
         }
+    }
+
+    Box(modifier) {
+        MTMapView(
+            referenceStyle = MTMapReferenceStyle.CUSTOM(
+                URL("https://api.maptiler.com/maps/$CUSTOM_MAP_STYLE_ID/style.json?key=$apiKey")
+            ),
+            options = MTMapOptions(zoom = 15.0),
+            controller = controller,
+            modifier = Modifier.fillMaxSize(),
+        )
+
+        LaunchedEffect(mapReady, route) {
+            if (!mapReady) return@LaunchedEffect
+            val style = controller.style ?: return@LaunchedEffect
+
+            // Avoid rebuilding the route unless the actual route snapshot changed.
+            val routeKey = if (route.isEmpty()) "empty" else {
+                val first = route.first()
+                val last = route.last()
+                "${route.size}:${first.time}:${first.latitude}:${first.longitude}:${last.time}:${last.latitude}:${last.longitude}"
+            }
+            if (routeKey == renderedRouteKey) return@LaunchedEffect
+
+            // The helper creates a GeoJSON source + line layer from our exact
+            // filtered GPS coordinates. No snapping, map matching or polygon
+            // generation is performed.
+            runCatching {
+                style.removeLayerById(ROUTE_LAYER_ID)
+                style.removeSourceById(ROUTE_SOURCE_ID)
+            }
+
+            currentMarker?.remove(controller)
+            currentMarker = null
+
+            if (route.size >= 2) {
+                val helper = style.polylineHelper()
+                helper.addPolyline(
+                    MTPolylineLayerOptions(
+                        data = routeGeoJson(route),
+                        layerId = ROUTE_LAYER_ID,
+                        sourceId = ROUTE_SOURCE_ID,
+                        lineColor = "#00E676",
+                        lineWidth = 5.0,
+                        lineOpacity = 1.0,
+                        lineCap = com.maptiler.maptilersdk.map.style.layer.line.MTLineCap.ROUND,
+                        lineJoin = com.maptiler.maptilersdk.map.style.layer.line.MTLineJoin.ROUND,
+                    )
+                )
+            }
+
+            if (route.isNotEmpty()) {
+                val last = route.last()
+                val lastLngLat = LngLat(last.longitude, last.latitude)
+                val marker = MTMarker(lastLngLat, android.graphics.Color.rgb(30, 136, 229))
+                style.addMarker(marker)
+                currentMarker = marker
+
+                if (!hasCenteredOnLocation) {
+                    controller.setZoom(16.0)
+                    controller.setCenter(lastLngLat)
+                    hasCenteredOnLocation = true
+                }
+            } else {
+                hasCenteredOnLocation = false
+            }
+
+            renderedRouteKey = routeKey
+        }
+
+        Text(
+            "© MapTiler • OpenStreetMap contributors",
+            modifier = Modifier.align(Alignment.BottomStart).padding(6.dp),
+            color = Color.White.copy(alpha = 0.9f),
+            fontSize = 8.sp,
+        )
     }
 }
