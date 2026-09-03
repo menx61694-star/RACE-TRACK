@@ -63,31 +63,24 @@ private fun ProductionRoot() {
     val stepStore = remember { StepDataStore(context) }
     val workoutStore = remember { WorkoutStore(context) }
     val profile = remember { ProfileStore(context) }
-    val auth = remember { FirebaseAuthManager(context) }
-
     var screen by rememberSaveable { mutableStateOf("home") }
-    var startupAuth by rememberSaveable { mutableStateOf(auth.currentUser == null) }
-    var setupProfile by rememberSaveable { mutableStateOf(false) }
+    var setupProfile by rememberSaveable { mutableStateOf(!profile.isComplete) }
     var permissionsChecked by rememberSaveable { mutableStateOf(false) }
     var todaySteps by remember { mutableIntStateOf(stepStore.todaySteps()) }
+    var selectedWorkout by remember { mutableStateOf<WorkoutStore.Session?>(null) }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         permissionsChecked = true
         startStepServiceIfAllowed(context)
-    }
-
-    LaunchedEffect(startupAuth) {
-        if (!startupAuth) {
-            setupProfile = !profile.isComplete
-        }
+        setupProfile = !profile.isComplete
     }
 
     LaunchedEffect(Unit) {
-        if (startupAuth) return@LaunchedEffect
         val missing = corePermissions.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
         if (missing.isNotEmpty()) permissionLauncher.launch(missing.toTypedArray()) else {
             permissionsChecked = true
             startStepServiceIfAllowed(context)
+            setupProfile = !profile.isComplete
         }
     }
 
@@ -98,12 +91,11 @@ private fun ProductionRoot() {
 
     BackHandler {
         when {
-            startupAuth -> Unit
             setupProfile && profile.isComplete -> { setupProfile = false; screen = "profile" }
             setupProfile -> Unit
             screen == "settings" || screen == "account" -> screen = "profile"
             screen == "live" -> Unit
-            screen == "replay" -> screen = "home"
+            screen == "replay" || screen == "details" -> screen = "history"
             screen == "history" -> screen = "analytics"
             screen != "home" -> screen = "home"
             else -> Unit
@@ -111,19 +103,13 @@ private fun ProductionRoot() {
     }
 
     MaterialTheme(colorScheme = darkColorScheme(primary = Green, secondary = Cyan, background = Charcoal, surface = Card, error = Coral)) {
-        if (startupAuth) {
-            GoogleAuthScreen(
-                profile = profile,
-                workoutStore = workoutStore,
-                onBack = { },
-                onFinished = {
-                    startupAuth = false
-                    setupProfile = !profile.isComplete
-                }
-            )
+        if (!permissionsChecked) {
+            PermissionGate(onContinue = {
+                val missing = corePermissions.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
+                if (missing.isNotEmpty()) permissionLauncher.launch(missing.toTypedArray()) else permissionsChecked = true
+            })
             return@MaterialTheme
         }
-
         if (setupProfile) {
             RaceTrackProfileEditScreen(
                 profile,
@@ -132,17 +118,8 @@ private fun ProductionRoot() {
             )
             return@MaterialTheme
         }
-
-        if (!permissionsChecked) {
-            PermissionGate(onContinue = {
-                val missing = corePermissions.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
-                if (missing.isNotEmpty()) permissionLauncher.launch(missing.toTypedArray()) else permissionsChecked = true
-            })
-            return@MaterialTheme
-        }
-
         Scaffold(containerColor = Charcoal, bottomBar = {
-            if (screen != "live" && screen != "settings" && screen != "account" && screen != "replay" && screen != "history") NavigationBar(containerColor = Card) {
+            if (screen != "live" && screen != "settings" && screen != "account" && screen != "replay" && screen != "history" && screen != "details") NavigationBar(containerColor = Card) {
                 NavItem("home", Icons.Default.Home, "Home", screen) { screen = it }
                 NavItem("analytics", Icons.Default.BarChart, "Stats", screen) { screen = it }
                 NavItem("community", Icons.Default.EmojiEvents, "Community", screen) { screen = it }
@@ -168,15 +145,25 @@ private fun ProductionRoot() {
                     }
                     "replay" -> AnimatedRoutePostScreen(route = RouteReplaySession.route, distanceMeters = RouteReplaySession.distanceMeters, durationSeconds = RouteReplaySession.durationSeconds, activity = RouteReplaySession.activity, onDone = { screen = "home" })
                     "history" -> WorkoutHistoryScreen(workoutStore) { session ->
-                        RouteReplaySession.update(session.route, session.distanceMeters, session.durationSeconds)
-                        RouteReplaySession.setActivity(session.activity)
-                        screen = "replay"
+                        selectedWorkout = session
+                        screen = "details"
                     }
+                    "details" -> selectedWorkout?.let { session ->
+                        WorkoutDetailsScreen(
+                            session = session,
+                            onReplay = {
+                                RouteReplaySession.update(session.route, session.distanceMeters, session.durationSeconds)
+                                RouteReplaySession.setActivity(session.activity)
+                                screen = "replay"
+                            },
+                            onBack = { screen = "history" }
+                        )
+                    } ?: run { screen = "history" }
                     "analytics" -> Phase2AnalyticsScreen(stepStore, workoutStore)
                     "community" -> CommunityScreen()
                     "profile" -> Phase2ProfileScreen(profile, onEdit = { setupProfile = true }, onSettings = { screen = "settings" })
                     "settings" -> Phase2SettingsScreen(context, onEditProfile = { setupProfile = true }, onAccountSync = { screen = "account" }, onBack = { screen = "profile" })
-                    "account" -> GoogleAuthScreen(profile, workoutStore, onBack = { screen = "settings" })
+                    "account" -> GoogleAuthScreen(profile, workoutStore) { screen = "settings" }
                 }
             }
         }
