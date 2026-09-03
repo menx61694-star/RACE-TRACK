@@ -1,11 +1,11 @@
 package com.racetrack.app
 
-import android.location.Location
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -58,11 +58,7 @@ fun WorkoutDetailsScreen(
         }
 
         if (tab == 0) {
-            TrackDetails(
-                session = session,
-                paceSeconds = paceSeconds,
-                onReplay = onReplay
-            )
+            TrackDetails(session, paceSeconds, onReplay)
         } else {
             ChartDetails(session, paceSeconds)
         }
@@ -160,10 +156,7 @@ private fun ChartDetails(session: WorkoutStore.Session, paceSeconds: Int) {
 }
 
 @Composable
-private fun RowScopeHack() {}
-
-@Composable
-private fun DetailsTab(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun RowScope.DetailsTab(label: String, selected: Boolean, onClick: () -> Unit) {
     TextButton(onClick = onClick, modifier = Modifier.weight(1f)) {
         Text(label, color = if (selected) Green else Muted, fontSize = 15.sp)
     }
@@ -192,9 +185,5 @@ private fun formatDetailsDuration(seconds: Long): String {
     return if (hours > 0L) "%d:%02d:%02d".format(hours, minutes, secs) else "%02d:%02d".format(minutes, secs)
 }
 
-private fun workoutDate(time: Long): String = WorkoutStoreDateFormatter.format(time)
-
-private object WorkoutStoreDateFormatter {
-    private val formatter = java.text.SimpleDateFormat("dd MMM yyyy • HH:mm", java.util.Locale.getDefault())
-    fun format(time: Long): String = formatter.format(java.util.Date(time))
-}
+private fun workoutDate(time: Long): String =
+    java.text.SimpleDateFormat("dd MMM yyyy • HH:mm", java.util.Locale.getDefault()).format(java.util.Date(time))
