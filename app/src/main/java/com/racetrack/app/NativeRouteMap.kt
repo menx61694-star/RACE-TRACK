@@ -96,7 +96,9 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
     DisposableEffect(controller) {
         onDispose {
             controller.delegate = null
-            currentMarker?.remove(controller)
+            currentMarker?.let { marker ->
+                controller.style?.removeMarker(marker)
+            }
             controller.destroy()
         }
     }
