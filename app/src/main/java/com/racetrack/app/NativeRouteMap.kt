@@ -30,17 +30,13 @@ import com.maptiler.maptilersdk.events.MTEvent
 import com.maptiler.maptilersdk.map.types.MTData
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.URL
 
-private const val CUSTOM_MAP_STYLE_ID = "01a067ec-2c74-7cbd-b963-26d058d9f73d"
 private const val ROUTE_SOURCE_ID = "race-track-current-route-source"
 private const val ROUTE_LAYER_ID = "race-track-current-route-layer"
 
 private fun routeGeoJson(route: List<Location>): String {
     val coordinates = JSONArray()
     route.forEach { location ->
-        // GeoJSON uses [longitude, latitude]. Keep every filtered GPS point;
-        // there is deliberately no road matching or synthetic geometry here.
         coordinates.put(JSONArray().put(location.longitude).put(location.latitude))
     }
 
@@ -71,16 +67,13 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
 
     if (apiKey.isBlank()) {
         Box(modifier, contentAlignment = Alignment.Center) {
-            Text(
-                "MapTiler API key is not configured",
-                color = Color.White,
-                fontSize = 12.sp,
-            )
+            Text("MapTiler API key is not configured", color = Color.White, fontSize = 12.sp)
         }
         return
     }
 
-    // MapTiler requires the API key to be set before the first map is created.
+    // Set the key before creating the map. Use MapTiler's maintained satellite
+    // reference style instead of the custom style that was showing broken tiles.
     MTConfig.apiKey = apiKey
 
     LaunchedEffect(controller) {
@@ -96,18 +89,14 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
     DisposableEffect(controller) {
         onDispose {
             controller.delegate = null
-            currentMarker?.let { marker ->
-                controller.style?.removeMarker(marker)
-            }
+            currentMarker?.let { marker -> controller.style?.removeMarker(marker) }
             controller.destroy()
         }
     }
 
     Box(modifier) {
         MTMapView(
-            referenceStyle = MTMapReferenceStyle.CUSTOM(
-                URL("https://api.maptiler.com/maps/$CUSTOM_MAP_STYLE_ID/style.json?key=$apiKey")
-            ),
+            referenceStyle = MTMapReferenceStyle.SATELLITE,
             options = MTMapOptions(zoom = 15.0),
             controller = controller,
             modifier = Modifier.fillMaxSize(),
@@ -117,7 +106,6 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
             if (!mapReady) return@LaunchedEffect
             val style = controller.style ?: return@LaunchedEffect
 
-            // Avoid rebuilding the route unless the actual route snapshot changed.
             val routeKey = if (route.isEmpty()) "empty" else {
                 val first = route.first()
                 val last = route.last()
@@ -125,9 +113,6 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
             }
             if (routeKey == renderedRouteKey) return@LaunchedEffect
 
-            // The helper creates a GeoJSON source + line layer from our exact
-            // filtered GPS coordinates. No snapping, map matching or polygon
-            // generation is performed.
             runCatching {
                 style.removeLayerById(ROUTE_LAYER_ID)
                 style.removeSourceById(ROUTE_SOURCE_ID)
