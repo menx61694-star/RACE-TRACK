@@ -18,6 +18,7 @@ import com.google.android.gms.location.Priority
 import com.google.android.gms.common.api.ResolvableApiException
 import com.google.android.gms.tasks.CancellationTokenSource
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 class LocationTracker(private val context: Context) {
@@ -38,6 +39,8 @@ class LocationTracker(private val context: Context) {
     private var paused = false
 
     private var lastTrackingLocation: Location? = null
+    private var rawPreviousLocation: Location? = null
+    private var smoothedLocation: Location? = null
     private var currentLocation: Location? = null
 
     private var totalMeters = 0f
@@ -150,6 +153,8 @@ class LocationTracker(private val context: Context) {
         active = false
         paused = false
         lastTrackingLocation = null
+        rawPreviousLocation = null
+        smoothedLocation = null
         currentLocation = null
         totalMeters = 0f
         elapsedSeconds = 0L
@@ -196,51 +201,104 @@ class LocationTracker(private val context: Context) {
         callback = null
         statusCallback = null
         lastTrackingLocation = null
+        rawPreviousLocation = null
+        smoothedLocation = null
         currentLocation = null
     }
 
     private fun acceptLocation(location: Location, initial: Boolean) {
-        // Keep route continuity through normal temporary GPS degradation. The old 25 m
-        // cutoff made the recorded track appear to stop whenever accuracy briefly worsened.
+        // Keep route continuity through normal temporary GPS degradation.
         val acquisitionMaxAccuracy = 60f
         if (location.accuracy <= 0f || location.accuracy > acquisitionMaxAccuracy) {
             statusCallback?.invoke("GPS accuracy is too low (${location.accuracy.roundToInt()} m)")
             return
         }
 
+        // Keep the raw fix for the live marker/speed, while the route itself is
+        // generated from an adaptive filter. This removes small GPS zig-zags
+        // without applying a fixed smoothing amount that would lag at turns.
         currentLocation = Location(location)
 
-        // Up to 50 m accuracy is still retained in the route so the map does not stop.
-        // Distance filtering remains stricter to avoid adding obvious GPS noise.
         val trackingMaxAccuracy = 50f
-        val previous = lastTrackingLocation
         if (location.accuracy > trackingMaxAccuracy) {
             statusCallback?.invoke("GPS ± ${location.accuracy.roundToInt()} m • reacquiring")
             publish(location.speedOrZero())
             return
         }
 
-        if (previous != null) {
-            val dt = ((location.time - previous.time).coerceAtLeast(500L)) / 1000f
-            val segment = previous.distanceTo(location)
-            val movementThreshold = max(3f, max(previous.accuracy, location.accuracy) * 0.75f)
-            val maxSpeed = if (location.hasSpeed() && location.speed >= 0f) max(12f, location.speed + 6f) else 8f
-            val maxSegment = maxSpeed * dt + max(2f, max(previous.accuracy, location.accuracy) * 0.25f)
+        val previousRaw = rawPreviousLocation
+        val previousSmoothed = smoothedLocation
 
-            if (segment <= maxSegment && segment >= movementThreshold) {
-                totalMeters += segment
-            } else if (segment > maxSegment) {
-                // Do not let a bad GPS jump corrupt distance, but retain the new point
-                // so the route can reconnect instead of stopping permanently.
-                statusCallback?.invoke("GPS jump filtered")
-            }
+        if (previousRaw == null || previousSmoothed == null || initial) {
+            smoothedLocation = Location(location)
+            lastTrackingLocation = Location(location)
+            rawPreviousLocation = Location(location)
+            routePoints.add(Location(location))
+            statusCallback?.invoke("GPS ± ${location.accuracy.roundToInt()} m")
+            publish(location.speedOrZero())
+            return
         }
 
-        lastTrackingLocation = Location(location)
-        routePoints.add(Location(location))
+        val rawDt = ((location.time - previousRaw.time).coerceAtLeast(500L)) / 1000f
+        val rawSegment = previousRaw.distanceTo(location)
+        val quality = location.accuracy.coerceIn(3f, 50f)
+        val previousQuality = previousRaw.accuracy.coerceIn(3f, 50f)
+        val qualityRatio = min(1f, 12f / max(quality, previousQuality))
+
+        // Reject physically implausible fixes before smoothing. A GPS spike
+        // should never pull the route across a street or create a long shortcut.
+        val reportedSpeed = if (location.hasSpeed()) location.speed.coerceAtLeast(0f) else 0f
+        val maxSpeed = if (reportedSpeed > 0.5f) max(9f, reportedSpeed + 7f) else 9f
+        val maxRawSegment = maxSpeed * rawDt + max(4f, quality * 0.5f)
+        if (rawSegment > maxRawSegment) {
+            rawPreviousLocation = Location(location)
+            statusCallback?.invoke("GPS jump filtered")
+            publish(location.speedOrZero())
+            return
+        }
+
+        // Adaptive exponential smoothing:
+        // - better accuracy -> trust the new fix more
+        // - real movement -> respond faster, reducing corner/turn lag
+        // - near stationary -> smooth harder to suppress GPS drift
+        val moving = reportedSpeed >= 1.0f || rawSegment >= 4f
+        val baseAlpha = when {
+            quality <= 6f -> 0.68f
+            quality <= 10f -> 0.58f
+            quality <= 20f -> 0.48f
+            else -> 0.38f
+        }
+        val movementBoost = if (moving) 0.16f else -0.08f
+        val alpha = (baseAlpha * qualityRatio + movementBoost).coerceIn(0.28f, 0.82f)
+
+        val filtered = blendLocations(previousSmoothed, location, alpha)
+        val filteredSegment = previousSmoothed.distanceTo(filtered)
+
+        // Do not count tiny filter residue as movement. Distance is measured on
+        // the same filtered route that is drawn on the map, keeping both consistent.
+        val movementThreshold = max(1.5f, quality * 0.18f)
+        if (filteredSegment >= movementThreshold) {
+            totalMeters += filteredSegment
+            lastTrackingLocation = Location(filtered)
+        }
+
+        smoothedLocation = filtered
+        rawPreviousLocation = Location(location)
+
+        routePoints.add(Location(filtered))
         if (routePoints.size > 2000) routePoints.removeAt(0)
         statusCallback?.invoke("GPS ± ${location.accuracy.roundToInt()} m")
         publish(location.speedOrZero())
+    }
+
+    private fun blendLocations(from: Location, to: Location, alpha: Float): Location {
+        val result = Location(to)
+        result.latitude = from.latitude + (to.latitude - from.latitude) * alpha
+        result.longitude = from.longitude + (to.longitude - from.longitude) * alpha
+        if (from.hasAltitude() && to.hasAltitude()) {
+            result.altitude = from.altitude + (to.altitude - from.altitude) * alpha
+        }
+        return result
     }
 
     private fun publish(speed: Float) {
