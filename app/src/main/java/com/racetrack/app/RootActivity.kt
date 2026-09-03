@@ -63,8 +63,10 @@ private fun ProductionRoot() {
     val stepStore = remember { StepDataStore(context) }
     val workoutStore = remember { WorkoutStore(context) }
     val profile = remember { ProfileStore(context) }
+    val auth = remember { FirebaseAuthManager(context) }
     var screen by rememberSaveable { mutableStateOf("home") }
     var setupProfile by rememberSaveable { mutableStateOf(!profile.isComplete) }
+    var authChecked by rememberSaveable { mutableStateOf(auth.currentUser != null) }
     var permissionsChecked by rememberSaveable { mutableStateOf(false) }
     var todaySteps by remember { mutableIntStateOf(stepStore.todaySteps()) }
     var selectedWorkout by remember { mutableStateOf<WorkoutStore.Session?>(null) }
@@ -75,7 +77,8 @@ private fun ProductionRoot() {
         setupProfile = !profile.isComplete
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(authChecked) {
+        if (!authChecked) return@LaunchedEffect
         val missing = corePermissions.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
         if (missing.isNotEmpty()) permissionLauncher.launch(missing.toTypedArray()) else {
             permissionsChecked = true
@@ -91,6 +94,7 @@ private fun ProductionRoot() {
 
     BackHandler {
         when {
+            !authChecked -> Unit
             setupProfile && profile.isComplete -> { setupProfile = false; screen = "profile" }
             setupProfile -> Unit
             screen == "settings" || screen == "account" -> screen = "profile"
@@ -103,6 +107,18 @@ private fun ProductionRoot() {
     }
 
     MaterialTheme(colorScheme = darkColorScheme(primary = Green, secondary = Cyan, background = Charcoal, surface = Card, error = Coral)) {
+        if (!authChecked) {
+            GoogleAuthScreen(
+                profile = profile,
+                workoutStore = workoutStore,
+                onBack = { },
+                onFinished = {
+                    setupProfile = !profile.isComplete
+                    authChecked = true
+                }
+            )
+            return@MaterialTheme
+        }
         if (!permissionsChecked) {
             PermissionGate(onContinue = {
                 val missing = corePermissions.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
