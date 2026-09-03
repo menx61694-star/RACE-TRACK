@@ -200,7 +200,9 @@ class LocationTracker(private val context: Context) {
     }
 
     private fun acceptLocation(location: Location, initial: Boolean) {
-        val acquisitionMaxAccuracy = 50f
+        // Keep route continuity through normal temporary GPS degradation. The old 25 m
+        // cutoff made the recorded track appear to stop whenever accuracy briefly worsened.
+        val acquisitionMaxAccuracy = 60f
         if (location.accuracy <= 0f || location.accuracy > acquisitionMaxAccuracy) {
             statusCallback?.invoke("GPS accuracy is too low (${location.accuracy.roundToInt()} m)")
             return
@@ -208,10 +210,12 @@ class LocationTracker(private val context: Context) {
 
         currentLocation = Location(location)
 
-        val trackingMaxAccuracy = 25f
+        // Up to 50 m accuracy is still retained in the route so the map does not stop.
+        // Distance filtering remains stricter to avoid adding obvious GPS noise.
+        val trackingMaxAccuracy = 50f
         val previous = lastTrackingLocation
         if (location.accuracy > trackingMaxAccuracy) {
-            statusCallback?.invoke("GPS ± ${location.accuracy.roundToInt()} m • waiting for accurate tracking fix")
+            statusCallback?.invoke("GPS ± ${location.accuracy.roundToInt()} m • reacquiring")
             publish(location.speedOrZero())
             return
         }
@@ -223,13 +227,13 @@ class LocationTracker(private val context: Context) {
             val maxSpeed = if (location.hasSpeed() && location.speed >= 0f) max(12f, location.speed + 6f) else 8f
             val maxSegment = maxSpeed * dt + max(2f, max(previous.accuracy, location.accuracy) * 0.25f)
 
-            if (segment > maxSegment) {
-                statusCallback?.invoke("GPS jump ignored")
-                publish(location.speedOrZero())
-                return
+            if (segment <= maxSegment && segment >= movementThreshold) {
+                totalMeters += segment
+            } else if (segment > maxSegment) {
+                // Do not let a bad GPS jump corrupt distance, but retain the new point
+                // so the route can reconnect instead of stopping permanently.
+                statusCallback?.invoke("GPS jump filtered")
             }
-
-            if (segment >= movementThreshold) totalMeters += segment
         }
 
         lastTrackingLocation = Location(location)
