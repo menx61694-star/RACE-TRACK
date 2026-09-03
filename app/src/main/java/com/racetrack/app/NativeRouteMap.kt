@@ -10,7 +10,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -132,7 +131,7 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
                 style.removeSourceById(ROUTE_SOURCE_ID)
             }
 
-            currentMarker?.remove(controller)
+            currentMarker?.let { style.removeMarker(it) }
             currentMarker = null
 
             if (route.size >= 2) {
