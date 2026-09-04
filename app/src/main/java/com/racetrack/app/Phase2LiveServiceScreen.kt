@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
@@ -49,11 +48,6 @@ import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * Workout screen backed by the foreground location service. The service owns
- * GPS so tracking continues when the display is locked or the Activity is
- * moved to the background.
- */
 @Composable
 fun Phase2LiveServiceScreen(
     profile: ProfileStore,
@@ -133,11 +127,7 @@ fun Phase2LiveServiceScreen(
         Box(Modifier.fillMaxWidth().weight(1f)) {
             NativeRouteMap(route, Modifier.fillMaxSize())
             if (route.isEmpty()) {
-                Card(
-                    Modifier.align(Alignment.TopCenter).padding(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = Card.copy(alpha = 0.96f)),
-                    shape = RoundedCornerShape(18.dp)
-                ) {
+                Card(Modifier.align(Alignment.TopCenter).padding(18.dp), colors = CardDefaults.cardColors(containerColor = Card.copy(alpha = 0.96f)), shape = RoundedCornerShape(18.dp)) {
                     Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(if (gpsStatus.contains("OFF") || gpsStatus.contains("Turn on")) "Location is Off" else "Waiting for GPS", color = Color.White, fontWeight = FontWeight.Bold)
                         Text(gpsStatus, color = Muted, fontSize = 12.sp)
@@ -154,46 +144,38 @@ fun Phase2LiveServiceScreen(
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("Live ${activity.lowercase()}", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
-                    Row {
-                        FilterChip(selected = activity == "Walk", onClick = { activity = "Walk" }, label = { Text("Walk") })
-                        Spacer(Modifier.size(5.dp))
-                        FilterChip(selected = activity == "Run", onClick = { activity = "Run" }, label = { Text("Run") })
-                    }
+                    Row { FilterChip(selected = activity == "Walk", onClick = { activity = "Walk" }, label = { Text("Walk") }); Spacer(Modifier.size(5.dp)); FilterChip(selected = activity == "Run", onClick = { activity = "Run" }, label = { Text("Run") }) }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(400f to "400 m", 800f to "800 m", 1000f to "1 km").forEach { (meters, label) -> FilterChip(selected = lapChoice == meters, onClick = { if (distance < 5f) lapChoice = meters }, label = { Text(label) }) }
                 }
                 Text("%02d:%02d:%02d".format(elapsed / 3600, (elapsed % 3600) / 60, elapsed % 60), color = Color.White, fontSize = 36.sp, fontWeight = FontWeight.Black)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    LiveMetric("Steps", tracker.steps.toString())
-                    LiveMetric("Distance", "%.2f km".format(distance / 1000f))
-                    LiveMetric("Pace", if (paceSecondsPerKm > 0) "%d:%02d".format((paceSecondsPerKm / 60).toInt(), (paceSecondsPerKm % 60).toInt()) else "—")
-                    LiveMetric("Calories", "${calories.roundToInt()} kcal")
+                    ServiceLiveMetric("Steps", tracker.steps.toString())
+                    ServiceLiveMetric("Distance", "%.2f km".format(distance / 1000f))
+                    ServiceLiveMetric("Pace", if (paceSecondsPerKm > 0) "%d:%02d".format((paceSecondsPerKm / 60).toInt(), (paceSecondsPerKm % 60).toInt()) else "—")
+                    ServiceLiveMetric("Calories", "${calories.roundToInt()} kcal")
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Lap ${lapRecords.size + 1}", color = Green, fontWeight = FontWeight.Bold)
                     Text("%.0f / %.0f m".format(currentLapDistance, lapChoice), color = Muted)
-                    Text(formatWorkoutDuration(currentLapTime), color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(serviceFormatWorkoutDuration(currentLapTime), color = Color.White, fontWeight = FontWeight.Bold)
                 }
                 if (lapRecords.isNotEmpty()) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    lapRecords.takeLast(3).forEach { Text("L${it.number} ${formatWorkoutDuration(it.elapsedSeconds)}", color = Green, fontSize = 12.sp) }
+                    lapRecords.takeLast(3).forEach { Text("L${it.number} ${serviceFormatWorkoutDuration(it.elapsedSeconds)}", color = Green, fontSize = 12.sp) }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(
-                        onClick = {
-                            if (running) {
-                                WorkoutLocationServiceBridge.pause(context)
-                                tracker.pause()
-                                running = false
-                            } else {
-                                WorkoutLocationServiceBridge.resume(context)
-                                tracker.resume()
-                                running = true
-                            }
-                        },
-                        modifier = Modifier.weight(1f).height(52.dp),
-                        shape = CircleShape
-                    ) {
+                    OutlinedButton(onClick = {
+                        if (running) {
+                            WorkoutLocationServiceBridge.pause(context)
+                            tracker.pause()
+                            running = false
+                        } else {
+                            WorkoutLocationServiceBridge.resume(context)
+                            tracker.resume()
+                            running = true
+                        }
+                    }, modifier = Modifier.weight(1f).height(52.dp), shape = CircleShape) {
                         Icon(if (running) Icons.Default.Stop else Icons.Default.PlayArrow, null)
                         Spacer(Modifier.size(6.dp))
                         Text(if (running) "Pause" else "Resume")
@@ -208,11 +190,11 @@ fun Phase2LiveServiceScreen(
 }
 
 @Composable
-private fun LiveMetric(label: String, value: String) {
+private fun ServiceLiveMetric(label: String, value: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(value, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
         Text(label, color = Muted, fontSize = 10.sp)
     }
 }
 
-private fun formatWorkoutDuration(seconds: Long): String = "%02d:%02d".format(seconds / 60, seconds % 60)
+private fun serviceFormatWorkoutDuration(seconds: Long): String = "%02d:%02d".format(seconds / 60, seconds % 60)
