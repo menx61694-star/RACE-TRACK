@@ -17,7 +17,6 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.LocationSettingsRequest
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -54,7 +53,7 @@ class LocationTracker(private val context: Context) {
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             if (!active || paused) return
-            result.locations.forEach { acceptLocation(it, initial = false) }
+            result.locations.forEach { acceptLocation(it) }
         }
     }
 
@@ -95,11 +94,7 @@ class LocationTracker(private val context: Context) {
         if (!active || paused) return
         val hasFine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val priority = if (hasFine) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
-        val request = LocationRequest.Builder(priority, 1000L)
-            .setMinUpdateIntervalMillis(500L)
-            .setMinUpdateDistanceMeters(1f)
-            .setWaitForAccurateLocation(true)
-            .build()
+        val request = buildLocationRequest(priority)
 
         LocationServices.getSettingsClient(context)
             .checkLocationSettings(
@@ -116,14 +111,17 @@ class LocationTracker(private val context: Context) {
             }
     }
 
-    @SuppressLint("MissingPermission")
-    private fun requestFreshLocation(priority: Int) {
-        if (!active || paused) return
-        val request = LocationRequest.Builder(priority, 1000L)
+    private fun buildLocationRequest(priority: Int): LocationRequest =
+        LocationRequest.Builder(priority, 1000L)
             .setMinUpdateIntervalMillis(500L)
             .setMinUpdateDistanceMeters(1f)
             .setWaitForAccurateLocation(true)
             .build()
+
+    @SuppressLint("MissingPermission")
+    private fun requestFreshLocation(priority: Int) {
+        if (!active || paused) return
+        val request = buildLocationRequest(priority)
         val currentRequest = CurrentLocationRequest.Builder()
             .setPriority(priority)
             .setMaxUpdateAgeMillis(2_000L)
@@ -134,9 +132,9 @@ class LocationTracker(private val context: Context) {
         client.getCurrentLocation(currentRequest, CancellationTokenSource().token)
             .addOnSuccessListener { location ->
                 if (!active || paused || location == null) return@addOnSuccessListener
-                // This callback can race with the continuous location callback.
-                // Never let a late one-shot fix reset an already-started route.
-                acceptLocation(location, initial = !sessionStarted)
+                // The one-shot fix may race with the continuous callback. It may
+                // initialise the session, but it must never restart an active route.
+                acceptLocation(location)
             }
             .addOnFailureListener { error -> statusCallback?.invoke("GPS fix failed: ${error.javaClass.simpleName}") }
 
@@ -201,7 +199,7 @@ class LocationTracker(private val context: Context) {
         sessionStarted = false
     }
 
-    private fun acceptLocation(location: Location, initial: Boolean) {
+    private fun acceptLocation(location: Location) {
         val acquisitionMaxAccuracy = 50f
         if (location.accuracy <= 0f || location.accuracy > acquisitionMaxAccuracy) {
             statusCallback?.invoke("GPS accuracy is too low (${location.accuracy.roundToInt()} m)")
@@ -210,8 +208,8 @@ class LocationTracker(private val context: Context) {
 
         currentLocation = Location(location)
 
-        // A route starts only from a genuinely fresh fix. In particular, do not
-        // use a cached lastLocation as the first recorded route point.
+        // Record the first good fix as the session anchor. There is no lastLocation
+        // fallback and no previous-workout route is mixed into the new session.
         if (!sessionStarted) {
             sessionStarted = true
             lastRouteLocation = Location(location)
@@ -232,42 +230,30 @@ class LocationTracker(private val context: Context) {
             statusCallback?.invoke("Duplicate/out-of-order GPS fix ignored")
             return
         }
+
         val dt = (timeDeltaMillis / 1000f).coerceAtLeast(0.1f)
         val rawSegment = previousRaw.distanceTo(location)
         val reportedSpeed = location.speedOrZero()
         val previousSpeed = previousRaw.speedOrZero()
 
-        // Reject impossible jumps, while allowing a large safety margin for
-        // walking/running and temporary GPS drift.
+        // Reject only physically implausible jumps. The threshold is deliberately
+        // generous so real turns, lane changes and short GPS excursions survive.
         val speedLimit = max(12f, max(reportedSpeed, previousSpeed) + 5f)
-        val accuracyAllowance = min(20f, max(3f, max(previousRaw.accuracy, location.accuracy) * 0.45f))
+        val accuracyAllowance = min(25f, max(3f, max(previousRaw.accuracy, location.accuracy) * 0.50f))
         val maxRawSegment = speedLimit * dt + accuracyAllowance
         if (rawSegment > maxRawSegment) {
             statusCallback?.invoke("GPS jump rejected (${rawSegment.roundToInt()} m)")
-            // Do not move previousRawLocation to the spike. The next fix is
-            // compared against the last trustworthy point instead.
+            // Keep the last trustworthy raw point as the reference.
             publish(reportedSpeed)
             return
         }
 
-        // A very fast 180-degree bearing flip over a meaningful distance is
-        // usually multipath noise. Do not apply this to slow movement/turns.
-        if (rawSegment >= 10f && reportedSpeed >= 2.5f && previousSpeed >= 2.5f &&
-            previousRaw.hasBearing() && location.hasBearing()) {
-            val bearingDelta = angularDifference(previousRaw.bearing, location.bearing)
-            if (bearingDelta > 155f && rawSegment < maxRawSegment * 0.7f) {
-                statusCallback?.invoke("GPS direction spike rejected")
-                publish(reportedSpeed)
-                return
-            }
-        }
-
         val routeAccuracyLimit = 35f
         if (location.accuracy > routeAccuracyLimit) {
-            // Keep the live marker current, but don't contaminate the recorded
-            // route or its distance with a weak fix.
+            // The marker follows the latest fix, but weak fixes are excluded from
+            // the route. Do not move previousRawLocation, otherwise a bad fix could
+            // make the next good fix look like an impossible jump.
             statusCallback?.invoke("GPS ± ${location.accuracy.roundToInt()} m • waiting for better fix")
-            previousRawLocation = Location(location)
             publish(reportedSpeed)
             return
         }
@@ -280,23 +266,18 @@ class LocationTracker(private val context: Context) {
             return
         }
 
-        // Accuracy-aware light filtering only. The accepted point stays close to
-        // the actual GPS measurement; no road snapping or heavy moving average.
-        // High-quality fixes are followed closely so different lines on the same
-        // road remain visible.
-        val accuracy = location.accuracy.coerceIn(3f, routeAccuracyLimit)
-        val accuracyTrust = (1f - ((accuracy - 3f) / (routeAccuracyLimit - 3f))).coerceIn(0f, 1f)
-        val movement = rawSegment / dt
-        val movementTrust = (movement / 4f).coerceIn(0f, 1f)
-        val alpha = (0.78f + accuracyTrust * 0.16f + movementTrust * 0.05f).coerceIn(0.78f, 0.97f)
-        val filtered = blendLocations(previousRoute, location, alpha)
+        // IMPORTANT: keep the actual accepted GPS coordinate. No road snapping,
+        // no map matching, no artificial geometry and no heavy smoothing. This is
+        // what preserves different running lines on the same road.
+        val filtered = Location(location)
         val filteredSegment = previousRoute.distanceTo(filtered)
 
-        // Preserve real movement while dropping only tiny GPS jitter.
+        // Drop only sub-metre jitter. Real movement is kept even when it is small.
+        val movement = rawSegment / dt
         val minimumRouteMovement = when {
-            movement < 0.8f -> 1.0f
-            movement < 2.0f -> 0.7f
-            else -> 0.5f
+            movement < 0.8f -> 0.75f
+            movement < 2.0f -> 0.55f
+            else -> 0.35f
         }
 
         if (filteredSegment >= minimumRouteMovement) {
@@ -319,23 +300,6 @@ class LocationTracker(private val context: Context) {
         } else {
             current.time - previous.time
         }
-    }
-
-    private fun blendLocations(from: Location, to: Location, alpha: Float): Location {
-        val result = Location(to)
-        result.latitude = from.latitude + (to.latitude - from.latitude) * alpha
-        result.longitude = from.longitude + (to.longitude - from.longitude) * alpha
-        if (from.hasAltitude() && to.hasAltitude()) {
-            result.altitude = from.altitude + (to.altitude - from.altitude) * alpha
-        }
-        return result
-    }
-
-    private fun angularDifference(first: Float, second: Float): Float {
-        var difference = (second - first) % 360f
-        if (difference < -180f) difference += 360f
-        if (difference > 180f) difference -= 360f
-        return abs(difference)
     }
 
     private fun publish(speed: Float) {
