@@ -153,10 +153,9 @@ private fun ProductionRoot() {
                             }
                         }
                     }
-                    "live" -> Phase2LiveScreen(profile, tracker) { steps, duration, distance, calories, activity, laps ->
+                    "live" -> Phase2LiveServiceScreen(profile, tracker) { steps, duration, distance, calories, activity, laps ->
                         workoutStore.saveSession(steps, duration, distance, calories, activity, laps)
                         RouteReplaySession.setActivity(activity)
-                        tracker.stop()
                         screen = "home"
                     }
                     "replay" -> AnimatedRoutePostScreen(route = RouteReplaySession.route, distanceMeters = RouteReplaySession.distanceMeters, durationSeconds = RouteReplaySession.durationSeconds, activity = RouteReplaySession.activity, onDone = { screen = "home" })
