@@ -15,6 +15,7 @@ on:
       - feature/animated-route-post
       - feature/profile-local-history
       - feature/firebase-auth-sync
+      - feature/google-maps
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -81,12 +82,12 @@ jobs:
           gradle signingReport --no-daemon --console=plain
       - name: Build debug APK
         env:
-          MAPTILER_API_KEY: ${{ secrets.MAPTILER_API_KEY }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
         run: gradle clean assembleDebug --stacktrace --no-daemon -Pkotlin.incremental=false -Dkotlin.caching.enabled=false --no-build-cache
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: race-track-debug-apk
+          name: race-track-google-maps-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
       - name: Remove Firebase configuration
