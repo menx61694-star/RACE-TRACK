@@ -186,7 +186,9 @@ private fun ProductionRoot() {
 }
 
 private fun startStepServiceIfAllowed(context: android.content.Context) {
-    if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION) != PackageManager.PERMISSION_GRANTED) return
+    val activityGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
+    val locationGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    if (!activityGranted || !locationGranted) return
     ContextCompat.startForegroundService(context, Intent(context, StepCountingService::class.java))
 }
 
