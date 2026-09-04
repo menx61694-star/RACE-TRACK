@@ -11,9 +11,10 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import androidx.core.app.NotificationCompat
-import java.util.concurrent.CopyOnWriteArrayList
 
 class StepCountingService : Service(), SensorEventListener {
     private lateinit var sensorManager: SensorManager
@@ -24,6 +25,16 @@ class StepCountingService : Service(), SensorEventListener {
     private var workoutPaused = false
     private var workoutElapsedSeconds = 0L
     private var lastElapsedRealtime = 0L
+    private val handler = Handler(Looper.getMainLooper())
+    private val workoutTicker = object : Runnable {
+        override fun run() {
+            if (workoutActive && !workoutPaused) {
+                updateWorkoutElapsed()
+                publishWorkoutState()
+                handler.postDelayed(this, 1000L)
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -32,10 +43,7 @@ class StepCountingService : Service(), SensorEventListener {
         stepSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
         createNotificationChannel()
         startAsForeground()
-
-        stepSensor?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
-        }
+        stepSensor?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -56,22 +64,18 @@ class StepCountingService : Service(), SensorEventListener {
         lastElapsedRealtime = android.os.SystemClock.elapsedRealtime()
         workoutSnapshot = LocationTracker.Snapshot()
         workoutStatus = "Starting GPS…"
-
         val tracker = LocationTracker(applicationContext)
         locationTracker = tracker
         tracker.start(
             onUpdate = { snapshot ->
                 workoutSnapshot = snapshot
-                workoutStatus = if (snapshot.accuracyMeters > 0f) {
-                    "GPS ± ${snapshot.accuracyMeters.toInt()} m"
-                } else "Waiting for GPS"
+                workoutStatus = if (snapshot.accuracyMeters > 0f) "GPS ± ${snapshot.accuracyMeters.toInt()} m" else "Waiting for GPS"
                 publishWorkoutState()
             },
-            onStatus = { status ->
-                workoutStatus = status
-                publishWorkoutState()
-            }
+            onStatus = { status -> workoutStatus = status }
         )
+        handler.removeCallbacks(workoutTicker)
+        handler.post(workoutTicker)
         updateNotification(store.todaySteps(), "Running • GPS active")
     }
 
@@ -89,6 +93,8 @@ class StepCountingService : Service(), SensorEventListener {
         workoutPaused = false
         lastElapsedRealtime = android.os.SystemClock.elapsedRealtime()
         locationTracker?.resume()
+        handler.removeCallbacks(workoutTicker)
+        handler.post(workoutTicker)
         updateNotification(store.todaySteps(), "Running • GPS active")
         publishWorkoutState()
     }
@@ -101,6 +107,8 @@ class StepCountingService : Service(), SensorEventListener {
         locationTracker = null
         workoutActive = false
         workoutPaused = false
+        handler.removeCallbacks(workoutTicker)
+        workoutSnapshot = RouteReplaySessionSnapshot(workoutSnapshot)
         updateNotification(store.todaySteps(), "Today's steps: ${store.todaySteps()}")
         publishWorkoutState()
     }
@@ -117,17 +125,12 @@ class StepCountingService : Service(), SensorEventListener {
     }
 
     private fun publishWorkoutState() {
-        if (workoutActive) updateWorkoutElapsed()
-        val base = workoutSnapshot
-        val elapsed = workoutElapsedSeconds
-        val published = if (base.distanceMeters >= 0f) {
-            base.copy(
-                averageSpeedMps = if (elapsed > 0) base.distanceMeters / elapsed else 0f
-            )
-        } else base
-        workoutSnapshot = published
-        listeners.forEach { it(published, workoutStatus, workoutActive, workoutPaused, elapsed) }
-        if (workoutActive) RouteReplaySession.update(published.route, published.distanceMeters, elapsed)
+        if (workoutActive) {
+            val elapsed = workoutElapsedSeconds
+            val s = workoutSnapshot
+            workoutSnapshot = s.copy(averageSpeedMps = if (elapsed > 0) s.distanceMeters / elapsed else 0f)
+            RouteReplaySession.update(workoutSnapshot.route, workoutSnapshot.distanceMeters, elapsed)
+        }
     }
 
     override fun onSensorChanged(event: SensorEvent) {
@@ -140,6 +143,7 @@ class StepCountingService : Service(), SensorEventListener {
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
     override fun onDestroy() {
+        handler.removeCallbacks(workoutTicker)
         locationTracker?.stop()
         locationTracker = null
         sensorManager.unregisterListener(this)
@@ -153,14 +157,11 @@ class StepCountingService : Service(), SensorEventListener {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
             startForeground(NOTIFICATION_ID, notification, types)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
+        } else startForeground(NOTIFICATION_ID, notification)
     }
 
     private fun updateNotification(steps: Int, text: String) {
-        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(NOTIFICATION_ID, buildNotification(steps, text))
+        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIFICATION_ID, buildNotification(steps, text))
     }
 
     private fun buildNotification(steps: Int, text: String): Notification =
@@ -176,9 +177,8 @@ class StepCountingService : Service(), SensorEventListener {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, "Race Track tracking", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Keeps step and active workout tracking running."
-            }
+            val channel = NotificationChannel(CHANNEL_ID, "Race Track tracking", NotificationManager.IMPORTANCE_LOW)
+            channel.description = "Keeps step and active workout tracking running."
             (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(channel)
         }
     }
@@ -194,17 +194,7 @@ class StepCountingService : Service(), SensorEventListener {
         @Volatile var workoutSnapshot: LocationTracker.Snapshot = LocationTracker.Snapshot()
         @Volatile var workoutStatus: String = "Waiting for GPS"
 
-        private val listeners = CopyOnWriteArrayList<(LocationTracker.Snapshot, String, Boolean, Boolean, Long) -> Unit>()
-
-        fun addWorkoutListener(listener: (LocationTracker.Snapshot, String, Boolean, Boolean, Long) -> Unit) {
-            listeners.add(listener)
-            listener(workoutSnapshot, workoutStatus, false, false, workoutSnapshotDuration)
-        }
-
-        fun removeWorkoutListener(listener: (LocationTracker.Snapshot, String, Boolean, Boolean, Long) -> Unit) {
-            listeners.remove(listener)
-        }
-
-        private var workoutSnapshotDuration: Long = 0L
+        // Keeps the final snapshot object alive after the service stops its GPS listener.
+        private fun RouteReplaySessionSnapshot(snapshot: LocationTracker.Snapshot): LocationTracker.Snapshot = snapshot
     }
 }
