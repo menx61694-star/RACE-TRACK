@@ -5,8 +5,8 @@ plugins {
     id("com.google.gms.google-services")
 }
 
-val mapTilerApiKey = providers.gradleProperty("MAPTILER_API_KEY")
-    .orElse(providers.environmentVariable("MAPTILER_API_KEY"))
+val googleMapsApiKey = providers.gradleProperty("GOOGLE_MAPS_API_KEY")
+    .orElse(providers.environmentVariable("GOOGLE_MAPS_API_KEY"))
     .getOrElse("")
     .replace("\\", "\\\\")
     .replace("\"", "\\\"")
@@ -21,7 +21,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
-        buildConfigField("String", "MAPTILER_API_KEY", "\"$mapTilerApiKey\"")
+        manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = googleMapsApiKey
     }
 
     buildFeatures {
@@ -51,9 +51,9 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("com.google.android.gms:play-services-location:21.4.0")
 
-    // MapTiler Kotlin SDK: map rendering only. GPS route is supplied by our
-    // LocationTracker and is never road-matched/snap-to-road.
-    implementation("com.maptiler:maptiler-sdk-kotlin:1.3.0")
+    // Google Maps SDK + Jetpack Compose bindings.
+    implementation("com.google.android.gms:play-services-maps:20.0.0")
+    implementation("com.google.maps.android:maps-compose:8.4.0")
 
     // Phase 2: Firebase Authentication + Cloud Firestore.
     implementation(platform("com.google.firebase:firebase-bom:34.18.0"))
