@@ -51,9 +51,8 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("com.google.android.gms:play-services-location:21.4.0")
 
-    // Google Maps Compose 7.x remains compatible with this project's API 35 / AGP 8.7 setup.
-    // It pulls the matching Maps SDK and maps-ktx versions transitively.
-    implementation("com.google.maps.android:maps-compose:7.0.0")
+    // Google Maps Compose version kept compatible with compileSdk 35 / AGP 8.7.3.
+    implementation("com.google.maps.android:maps-compose:6.4.1")
 
     // Phase 2: Firebase Authentication + Cloud Firestore.
     implementation(platform("com.google.firebase:firebase-bom:34.18.0"))
