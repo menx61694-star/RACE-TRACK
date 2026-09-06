@@ -132,8 +132,6 @@ class LocationTracker(private val context: Context) {
         client.getCurrentLocation(currentRequest, CancellationTokenSource().token)
             .addOnSuccessListener { location ->
                 if (!active || paused || location == null) return@addOnSuccessListener
-                // The one-shot fix may race with the continuous callback. It may
-                // initialise the session, but it must never restart an active route.
                 acceptLocation(location)
             }
             .addOnFailureListener { error -> statusCallback?.invoke("GPS fix failed: ${error.javaClass.simpleName}") }
@@ -200,6 +198,9 @@ class LocationTracker(private val context: Context) {
     }
 
     private fun acceptLocation(location: Location) {
+        // Keep the initial acquisition guard tight enough to avoid unusable fixes,
+        // while still allowing the route to start when the first outdoor fix is not
+        // immediately below 30 m accuracy.
         val acquisitionMaxAccuracy = 50f
         if (location.accuracy <= 0f || location.accuracy > acquisitionMaxAccuracy) {
             statusCallback?.invoke("GPS accuracy is too low (${location.accuracy.roundToInt()} m)")
@@ -208,8 +209,6 @@ class LocationTracker(private val context: Context) {
 
         currentLocation = Location(location)
 
-        // Record the first good fix as the session anchor. There is no lastLocation
-        // fallback and no previous-workout route is mixed into the new session.
         if (!sessionStarted) {
             sessionStarted = true
             lastRouteLocation = Location(location)
@@ -236,23 +235,21 @@ class LocationTracker(private val context: Context) {
         val reportedSpeed = location.speedOrZero()
         val previousSpeed = previousRaw.speedOrZero()
 
-        // Reject only physically implausible jumps. The threshold is deliberately
-        // generous so real turns, lane changes and short GPS excursions survive.
         val speedLimit = max(12f, max(reportedSpeed, previousSpeed) + 5f)
         val accuracyAllowance = min(25f, max(3f, max(previousRaw.accuracy, location.accuracy) * 0.50f))
         val maxRawSegment = speedLimit * dt + accuracyAllowance
         if (rawSegment > maxRawSegment) {
             statusCallback?.invoke("GPS jump rejected (${rawSegment.roundToInt()} m)")
-            // Keep the last trustworthy raw point as the reference.
             publish(reportedSpeed)
             return
         }
 
-        val routeAccuracyLimit = 35f
+        // Do not make the route disappear merely because the current fix is between
+        // 35 m and 50 m accuracy. The map should continue to work while the GPS is
+        // settling; the jump filter above still protects the distance/route from
+        // implausible teleports.
+        val routeAccuracyLimit = 50f
         if (location.accuracy > routeAccuracyLimit) {
-            // The marker follows the latest fix, but weak fixes are excluded from
-            // the route. Do not move previousRawLocation, otherwise a bad fix could
-            // make the next good fix look like an impossible jump.
             statusCallback?.invoke("GPS ± ${location.accuracy.roundToInt()} m • waiting for better fix")
             publish(reportedSpeed)
             return
@@ -266,13 +263,11 @@ class LocationTracker(private val context: Context) {
             return
         }
 
-        // IMPORTANT: keep the actual accepted GPS coordinate. No road snapping,
-        // no map matching, no artificial geometry and no heavy smoothing. This is
-        // what preserves different running lines on the same road.
+        // Preserve the actual accepted GPS coordinate. No road snapping, map
+        // matching, artificial geometry or heavy smoothing is applied.
         val filtered = Location(location)
         val filteredSegment = previousRoute.distanceTo(filtered)
 
-        // Drop only sub-metre jitter. Real movement is kept even when it is small.
         val movement = rawSegment / dt
         val minimumRouteMovement = when {
             movement < 0.8f -> 0.75f
