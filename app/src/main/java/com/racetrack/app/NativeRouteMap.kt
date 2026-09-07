@@ -9,8 +9,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,7 +56,11 @@ private fun routeGeoJson(route: List<Location>): String {
 }
 
 @Composable
-fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
+fun NativeRouteMap(
+    route: List<Location>,
+    modifier: Modifier = Modifier,
+    onMapReady: () -> Unit = {},
+) {
     val apiKey = BuildConfig.MAPTILER_API_KEY
     val context = androidx.compose.ui.platform.LocalContext.current
     val controller = remember { MTMapViewController(context) }
@@ -72,14 +76,13 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
         return
     }
 
-    // Set the key before creating the map. Use MapTiler's maintained satellite
-    // reference style instead of the custom style that was showing broken tiles.
     MTConfig.apiKey = apiKey
 
     LaunchedEffect(controller) {
         controller.delegate = object : MTMapViewDelegate {
             override fun onMapViewInitialized() {
                 mapReady = true
+                onMapReady()
             }
 
             override fun onEventTriggered(event: MTEvent, data: MTData?) = Unit
@@ -97,7 +100,14 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
     Box(modifier) {
         MTMapView(
             referenceStyle = MTMapReferenceStyle.SATELLITE,
-            options = MTMapOptions(zoom = 15.0),
+            options = MTMapOptions(
+                zoom = 15.0,
+                // MapTiler exposes this option so the provider wordmark does
+                // not compete with the replay branding. MapTiler notes that
+                // hiding it requires a premium account.
+                maptilerLogoIsVisible = false,
+                prewarm = true,
+            ),
             controller = controller,
             modifier = Modifier.fillMaxSize(),
         )
@@ -118,9 +128,6 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
                 style.removeSourceById(ROUTE_SOURCE_ID)
             }
 
-            currentMarker?.let { style.removeMarker(it) }
-            currentMarker = null
-
             if (route.size >= 2) {
                 val helper = style.polylineHelper()
                 helper.addPolyline(
@@ -138,9 +145,15 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
             if (route.isNotEmpty()) {
                 val last = route.last()
                 val lastLngLat = LngLat(last.longitude, last.latitude)
-                val marker = MTMarker(lastLngLat, android.graphics.Color.rgb(30, 136, 229))
-                style.addMarker(marker)
-                currentMarker = marker
+                val marker = currentMarker
+
+                if (marker == null) {
+                    val newMarker = MTMarker(lastLngLat, android.graphics.Color.rgb(30, 136, 229))
+                    style.addMarker(newMarker)
+                    currentMarker = newMarker
+                } else {
+                    marker.setCoordinates(lastLngLat, controller)
+                }
 
                 if (!hasCenteredOnLocation) {
                     controller.setZoom(16.0)
@@ -148,6 +161,8 @@ fun NativeRouteMap(route: List<Location>, modifier: Modifier = Modifier) {
                     hasCenteredOnLocation = true
                 }
             } else {
+                currentMarker?.let { style.removeMarker(it) }
+                currentMarker = null
                 hasCenteredOnLocation = false
             }
 
