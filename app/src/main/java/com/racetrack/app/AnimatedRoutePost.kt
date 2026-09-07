@@ -30,14 +30,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
 /**
- * First experimental version of the Strava-style activity replay.
- * It replays the real GPS route on the existing satellite map instead of
- * generating a fake route or using the step count.
+ * Strava-style activity replay. It replays the real GPS route on the existing
+ * satellite map and overlays the RACE-TRACK brand and live replay timestamp.
  */
 @Composable
 fun AnimatedRoutePostScreen(
@@ -61,17 +61,43 @@ fun AnimatedRoutePostScreen(
     val visibleRoute = if (route.isEmpty()) emptyList() else route.take(frame.coerceAtLeast(1))
     val progress = if (route.size <= 1) 1f else ((frame - 1).toFloat() / (route.size - 1)).coerceIn(0f, 1f)
     val shownDistance = distanceMeters * progress
+    val replayTimestamp = visibleRoute.lastOrNull()?.time?.let { formatReplayTimestamp(it) } ?: "--:--"
 
     Column(Modifier.fillMaxSize().background(Charcoal)) {
         Box(Modifier.fillMaxWidth().weight(1f)) {
             NativeRouteMap(visibleRoute, Modifier.fillMaxSize())
 
+            // App branding is intentionally overlaid on the replay so the
+            // exported/share-style view does not depend on map-provider branding.
+            Column(
+                Modifier.align(Alignment.TopCenter).padding(top = 18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Text(
+                    "RACE-TRACK",
+                    color = Color.White,
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Text(
+                    "${activity.uppercase()} REPLAY",
+                    color = Green,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
             Column(
                 Modifier.align(Alignment.TopStart).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text("RACE-TRACK", color = Color.White, fontSize = 18.sp)
-                Text("${activity.uppercase()} REPLAY", color = Green, fontSize = 12.sp)
+                Text(
+                    replayTimestamp,
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
 
             Column(
@@ -121,6 +147,15 @@ fun AnimatedRoutePostScreen(
             }
         }
     }
+}
+
+private fun formatReplayTimestamp(timestampMillis: Long): String {
+    val safe = timestampMillis.coerceAtLeast(0L)
+    val totalSeconds = safe / 1000L
+    val hours = (totalSeconds / 3600L) % 24L
+    val minutes = (totalSeconds % 3600L) / 60L
+    val seconds = totalSeconds % 60L
+    return "%02d:%02d:%02d".format(hours, minutes, seconds)
 }
 
 private fun formatReplayDuration(seconds: Long): String {
