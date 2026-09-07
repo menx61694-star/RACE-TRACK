@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -35,9 +34,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
+private const val MAX_REPLAY_POINTS = 180
+private const val REPLAY_FRAME_DELAY_MS = 50L
+
 /**
- * Strava-style activity replay. It replays the real GPS route on the existing
- * satellite map and overlays the RACE-TRACK brand and live replay timestamp.
+ * Strava-style activity replay. The original GPS route is reduced to a small,
+ * evenly distributed set of points for replay so the map is not forced to
+ * rebuild a large GeoJSON line on every animation frame.
  */
 @Composable
 fun AnimatedRoutePostScreen(
@@ -47,28 +50,47 @@ fun AnimatedRoutePostScreen(
     activity: String,
     onDone: () -> Unit
 ) {
-    var frame by remember(route) { mutableIntStateOf(if (route.isEmpty()) 0 else 1) }
-    var playing by remember(route) { mutableStateOf(true) }
+    val replayRoute = remember(route) { prepareReplayRoute(route) }
+    var frame by remember(replayRoute) { mutableIntStateOf(if (replayRoute.isEmpty()) 0 else 1) }
+    var mapReady by remember(replayRoute) { mutableStateOf(false) }
+    var playing by remember(replayRoute) { mutableStateOf(false) }
 
-    LaunchedEffect(route, playing) {
-        while (playing && route.isNotEmpty() && frame < route.size) {
-            delay(90L)
+    LaunchedEffect(mapReady, replayRoute, playing) {
+        if (!mapReady) return@LaunchedEffect
+
+        while (playing && replayRoute.isNotEmpty() && frame < replayRoute.size) {
+            delay(REPLAY_FRAME_DELAY_MS)
             frame++
         }
-        if (frame >= route.size) playing = false
+        if (frame >= replayRoute.size) playing = false
     }
 
-    val visibleRoute = if (route.isEmpty()) emptyList() else route.take(frame.coerceAtLeast(1))
-    val progress = if (route.size <= 1) 1f else ((frame - 1).toFloat() / (route.size - 1)).coerceIn(0f, 1f)
+    val visibleRoute = if (replayRoute.isEmpty()) {
+        emptyList()
+    } else {
+        replayRoute.take(frame.coerceAtLeast(1))
+    }
+    val progress = if (replayRoute.size <= 1) {
+        1f
+    } else {
+        ((frame - 1).toFloat() / (replayRoute.size - 1)).coerceIn(0f, 1f)
+    }
     val shownDistance = distanceMeters * progress
     val replayTimestamp = visibleRoute.lastOrNull()?.time?.let { formatReplayTimestamp(it) } ?: "--:--"
 
     Column(Modifier.fillMaxSize().background(Charcoal)) {
         Box(Modifier.fillMaxWidth().weight(1f)) {
-            NativeRouteMap(visibleRoute, Modifier.fillMaxSize())
+            NativeRouteMap(
+                visibleRoute,
+                Modifier.fillMaxSize(),
+                onMapReady = {
+                    mapReady = true
+                    if (replayRoute.isNotEmpty() && frame < replayRoute.size) {
+                        playing = true
+                    }
+                }
+            )
 
-            // App branding is intentionally overlaid on the replay so the
-            // exported/share-style view does not depend on map-provider branding.
             Column(
                 Modifier.align(Alignment.TopCenter).padding(top = 18.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -129,11 +151,11 @@ fun AnimatedRoutePostScreen(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
                 IconButton(onClick = {
                     frame = 1
-                    playing = true
+                    playing = mapReady
                 }) {
                     Icon(Icons.Default.Replay, contentDescription = "Replay", tint = Color.White)
                 }
-                IconButton(onClick = { playing = !playing }) {
+                IconButton(onClick = { if (mapReady) playing = !playing }) {
                     Icon(
                         if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
                         contentDescription = if (playing) "Pause" else "Play",
@@ -146,6 +168,16 @@ fun AnimatedRoutePostScreen(
                 Text("Done")
             }
         }
+    }
+}
+
+private fun prepareReplayRoute(route: List<Location>): List<Location> {
+    if (route.size <= MAX_REPLAY_POINTS) return route
+
+    val lastIndex = route.lastIndex
+    return List(MAX_REPLAY_POINTS) { index ->
+        val sourceIndex = ((index.toLong() * lastIndex) / (MAX_REPLAY_POINTS - 1)).toInt()
+        route[sourceIndex]
     }
 }
 
