@@ -102,11 +102,8 @@ fun NativeRouteMap(
             referenceStyle = MTMapReferenceStyle.SATELLITE,
             options = MTMapOptions(
                 zoom = 15.0,
-                // MapTiler exposes this option so the provider wordmark does
-                // not compete with the replay branding. MapTiler notes that
-                // hiding it requires a premium account.
+                // MapTiler notes that hiding its logo requires a premium account.
                 maptilerLogoIsVisible = false,
-                prewarm = true,
             ),
             controller = controller,
             modifier = Modifier.fillMaxSize(),
