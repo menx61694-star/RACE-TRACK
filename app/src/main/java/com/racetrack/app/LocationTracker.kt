@@ -6,10 +6,13 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationManager
+import android.os.Handler
+import android.os.Looper
 import androidx.core.content.ContextCompat
 import com.google.android.gms.common.api.ResolvableApiException
 import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationAvailability
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
@@ -33,10 +36,13 @@ class LocationTracker(private val context: Context) {
 
     private val client: FusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(context)
     private val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+    private val handler = Handler(Looper.getMainLooper())
     private var callback: ((Snapshot) -> Unit)? = null
     private var statusCallback: ((String) -> Unit)? = null
     private var active = false
     private var paused = false
+    private var updatesRequested = false
+    private var lastFixElapsedRealtimeNanos = 0L
 
     private var lastRouteLocation: Location? = null
     private var previousRawLocation: Location? = null
@@ -50,10 +56,28 @@ class LocationTracker(private val context: Context) {
     var snapshot: Snapshot = Snapshot()
         private set
 
+    private val retryRunnable = object : Runnable {
+        override fun run() {
+            if (!active || paused) return
+            val now = android.os.SystemClock.elapsedRealtimeNanos()
+            val noRecentFix = lastFixElapsedRealtimeNanos == 0L ||
+                (now - lastFixElapsedRealtimeNanos) > 5_000_000_000L
+            if (noRecentFix) requestSettingsAndLocation(showAcquiringStatus = false)
+            handler.postDelayed(this, 5_000L)
+        }
+    }
+
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             if (!active || paused) return
             result.locations.forEach { acceptLocation(it) }
+        }
+
+        override fun onLocationAvailability(availability: LocationAvailability) {
+            if (!active || paused) return
+            if (!availability.isLocationAvailable) {
+                statusCallback?.invoke("GPS signal unavailable • searching…")
+            }
         }
     }
 
@@ -74,6 +98,7 @@ class LocationTracker(private val context: Context) {
             return
         }
         requestSettingsAndLocation()
+        handler.postDelayed(retryRunnable, 5_000L)
     }
 
     fun retry() {
@@ -90,7 +115,7 @@ class LocationTracker(private val context: Context) {
     }
 
     @SuppressLint("MissingPermission")
-    private fun requestSettingsAndLocation() {
+    private fun requestSettingsAndLocation(showAcquiringStatus: Boolean = true) {
         if (!active || paused) return
         val hasFine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val priority = if (hasFine) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
@@ -103,11 +128,11 @@ class LocationTracker(private val context: Context) {
                     .setAlwaysShow(true)
                     .build()
             )
-            .addOnSuccessListener { requestFreshLocation(priority) }
+            .addOnSuccessListener { requestFreshLocation(priority, showAcquiringStatus) }
             .addOnFailureListener { error ->
                 if (error is ResolvableApiException) statusCallback?.invoke("Turn on Location / GPS")
                 else statusCallback?.invoke("Location settings unavailable")
-                requestFreshLocation(priority)
+                requestFreshLocation(priority, showAcquiringStatus)
             }
     }
 
@@ -115,34 +140,50 @@ class LocationTracker(private val context: Context) {
         LocationRequest.Builder(priority, 1000L)
             .setMinUpdateIntervalMillis(500L)
             .setMinUpdateDistanceMeters(1f)
-            .setWaitForAccurateLocation(true)
+            // Waiting for an especially accurate fix can make the tracker appear
+            // frozen. The acceptance filter below handles accuracy instead.
+            .setWaitForAccurateLocation(false)
             .build()
 
     @SuppressLint("MissingPermission")
-    private fun requestFreshLocation(priority: Int) {
+    private fun requestFreshLocation(priority: Int, showAcquiringStatus: Boolean) {
         if (!active || paused) return
         val request = buildLocationRequest(priority)
         val currentRequest = CurrentLocationRequest.Builder()
             .setPriority(priority)
-            .setMaxUpdateAgeMillis(2_000L)
-            .setDurationMillis(15_000L)
+            .setMaxUpdateAgeMillis(1_000L)
+            .setDurationMillis(10_000L)
             .build()
 
-        statusCallback?.invoke("Acquiring GPS fix…")
+        client.removeLocationUpdates(locationCallback)
+        updatesRequested = false
+        if (showAcquiringStatus) statusCallback?.invoke("Acquiring GPS fix…")
+
         client.getCurrentLocation(currentRequest, CancellationTokenSource().token)
             .addOnSuccessListener { location ->
                 if (!active || paused || location == null) return@addOnSuccessListener
                 acceptLocation(location)
             }
-            .addOnFailureListener { error -> statusCallback?.invoke("GPS fix failed: ${error.javaClass.simpleName}") }
+            .addOnFailureListener { error ->
+                if (active && !paused) statusCallback?.invoke("GPS retrying… (${error.javaClass.simpleName})")
+            }
 
         client.requestLocationUpdates(request, locationCallback, context.mainLooper)
-            .addOnFailureListener { error -> statusCallback?.invoke("GPS updates failed: ${error.javaClass.simpleName}") }
+            .addOnSuccessListener {
+                updatesRequested = true
+            }
+            .addOnFailureListener { error ->
+                updatesRequested = false
+                if (active && !paused) statusCallback?.invoke("GPS updates failed: ${error.javaClass.simpleName}")
+            }
     }
 
     private fun resetSession() {
         active = false
         paused = false
+        updatesRequested = false
+        lastFixElapsedRealtimeNanos = 0L
+        handler.removeCallbacks(retryRunnable)
         lastRouteLocation = null
         previousRawLocation = null
         currentLocation = null
@@ -175,7 +216,9 @@ class LocationTracker(private val context: Context) {
     fun pause() {
         if (!active || paused) return
         paused = true
+        handler.removeCallbacks(retryRunnable)
         client.removeLocationUpdates(locationCallback)
+        updatesRequested = false
     }
 
     @SuppressLint("MissingPermission")
@@ -183,12 +226,15 @@ class LocationTracker(private val context: Context) {
         if (!active || !paused) return
         paused = false
         retry()
+        handler.postDelayed(retryRunnable, 5_000L)
     }
 
     fun stop() {
         active = false
         paused = false
+        handler.removeCallbacks(retryRunnable)
         client.removeLocationUpdates(locationCallback)
+        updatesRequested = false
         callback = null
         statusCallback = null
         lastRouteLocation = null
@@ -198,15 +244,27 @@ class LocationTracker(private val context: Context) {
     }
 
     private fun acceptLocation(location: Location) {
-        // Keep the initial acquisition guard tight enough to avoid unusable fixes,
-        // while still allowing the route to start when the first outdoor fix is not
-        // immediately below 30 m accuracy.
-        val acquisitionMaxAccuracy = 50f
-        if (location.accuracy <= 0f || location.accuracy > acquisitionMaxAccuracy) {
+        if (!location.hasAccuracy() || location.accuracy <= 0f) {
+            statusCallback?.invoke("Waiting for GPS accuracy…")
+            return
+        }
+
+        val nowNanos = android.os.SystemClock.elapsedRealtimeNanos()
+        val locationElapsed = location.elapsedRealtimeNanos
+        if (locationElapsed > 0L && nowNanos - locationElapsed > 15_000_000_000L) {
+            statusCallback?.invoke("Stale GPS fix ignored")
+            return
+        }
+
+        // Allow a coarse first fix to put the blue/current-position marker on the
+        // map, but only count reasonably accurate points toward the route distance.
+        val acquisitionMaxAccuracy = 80f
+        if (location.accuracy > acquisitionMaxAccuracy) {
             statusCallback?.invoke("GPS accuracy is too low (${location.accuracy.roundToInt()} m)")
             return
         }
 
+        lastFixElapsedRealtimeNanos = nowNanos
         currentLocation = Location(location)
 
         if (!sessionStarted) {
@@ -236,20 +294,20 @@ class LocationTracker(private val context: Context) {
         val previousSpeed = previousRaw.speedOrZero()
 
         val speedLimit = max(12f, max(reportedSpeed, previousSpeed) + 5f)
-        val accuracyAllowance = min(25f, max(3f, max(previousRaw.accuracy, location.accuracy) * 0.50f))
+        val accuracyAllowance = min(30f, max(5f, max(previousRaw.accuracy, location.accuracy) * 0.60f))
         val maxRawSegment = speedLimit * dt + accuracyAllowance
         if (rawSegment > maxRawSegment) {
+            // Crucial recovery fix: advance the raw anchor even when a point is
+            // rejected. Keeping the old bad anchor caused repeated jump rejection.
+            previousRawLocation = Location(location)
             statusCallback?.invoke("GPS jump rejected (${rawSegment.roundToInt()} m)")
             publish(reportedSpeed)
             return
         }
 
-        // Do not make the route disappear merely because the current fix is between
-        // 35 m and 50 m accuracy. The map should continue to work while the GPS is
-        // settling; the jump filter above still protects the distance/route from
-        // implausible teleports.
-        val routeAccuracyLimit = 50f
+        val routeAccuracyLimit = 65f
         if (location.accuracy > routeAccuracyLimit) {
+            previousRawLocation = Location(location)
             statusCallback?.invoke("GPS ± ${location.accuracy.roundToInt()} m • waiting for better fix")
             publish(reportedSpeed)
             return
@@ -263,11 +321,8 @@ class LocationTracker(private val context: Context) {
             return
         }
 
-        // Preserve the actual accepted GPS coordinate. No road snapping, map
-        // matching, artificial geometry or heavy smoothing is applied.
         val filtered = Location(location)
         val filteredSegment = previousRoute.distanceTo(filtered)
-
         val movement = rawSegment / dt
         val minimumRouteMovement = when {
             movement < 0.8f -> 0.75f
