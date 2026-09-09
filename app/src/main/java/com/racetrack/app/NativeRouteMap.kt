@@ -33,6 +33,7 @@ import org.json.JSONObject
 
 private const val ROUTE_SOURCE_ID = "race-track-current-route-source"
 private const val ROUTE_LAYER_ID = "race-track-current-route-layer"
+private const val ROUTE_REDRAW_EVERY_POINTS = 3
 
 private fun routeGeoJson(route: List<Location>): String {
     val coordinates = JSONArray()
@@ -63,11 +64,6 @@ fun NativeRouteMap(
 ) {
     val apiKey = BuildConfig.MAPTILER_API_KEY
     val context = androidx.compose.ui.platform.LocalContext.current
-    val controller = remember { MTMapViewController(context) }
-    var mapReady by remember { mutableStateOf(false) }
-    var hasCenteredOnLocation by remember { mutableStateOf(false) }
-    var renderedRouteKey by remember { mutableStateOf<String?>(null) }
-    var currentMarker by remember { mutableStateOf<MTMarker?>(null) }
 
     if (apiKey.isBlank()) {
         Box(modifier, contentAlignment = Alignment.Center) {
@@ -76,16 +72,26 @@ fun NativeRouteMap(
         return
     }
 
+    // MapTiler requires the key before the first MTMapView is created.
     MTConfig.apiKey = apiKey
 
-    LaunchedEffect(controller) {
-        controller.delegate = object : MTMapViewDelegate {
-            override fun onMapViewInitialized() {
-                mapReady = true
-                onMapReady()
-            }
+    var mapReady by remember { mutableStateOf(false) }
+    var hasCenteredOnLocation by remember { mutableStateOf(false) }
+    var lastRenderedRouteSize by remember { mutableStateOf(-1) }
+    var currentMarker by remember { mutableStateOf<MTMarker?>(null) }
 
-            override fun onEventTriggered(event: MTEvent, data: MTData?) = Unit
+    // Install the delegate while the controller is created. Installing it from
+    // a LaunchedEffect can race MTMapView initialization on fast devices.
+    val controller = remember {
+        MTMapViewController(context).apply {
+            delegate = object : MTMapViewDelegate {
+                override fun onMapViewInitialized() {
+                    mapReady = true
+                    onMapReady()
+                }
+
+                override fun onEventTriggered(event: MTEvent, data: MTData?) = Unit
+            }
         }
     }
 
@@ -102,8 +108,7 @@ fun NativeRouteMap(
             referenceStyle = MTMapReferenceStyle.SATELLITE,
             options = MTMapOptions(
                 zoom = 15.0,
-                // MapTiler notes that hiding its logo requires a premium account.
-                maptilerLogoIsVisible = false,
+                maptilerLogoIsVisible = true,
             ),
             controller = controller,
             modifier = Modifier.fillMaxSize(),
@@ -113,19 +118,46 @@ fun NativeRouteMap(
             if (!mapReady) return@LaunchedEffect
             val style = controller.style ?: return@LaunchedEffect
 
-            val routeKey = if (route.isEmpty()) "empty" else {
-                val first = route.first()
-                val last = route.last()
-                "${route.size}:${first.time}:${first.latitude}:${first.longitude}:${last.time}:${last.latitude}:${last.longitude}"
-            }
-            if (routeKey == renderedRouteKey) return@LaunchedEffect
-
-            runCatching {
+            if (route.isEmpty()) {
                 style.removeLayerById(ROUTE_LAYER_ID)
                 style.removeSourceById(ROUTE_SOURCE_ID)
+                currentMarker?.let { style.removeMarker(it) }
+                currentMarker = null
+                hasCenteredOnLocation = false
+                lastRenderedRouteSize = 0
+                return@LaunchedEffect
             }
 
-            if (route.size >= 2) {
+            val last = route.last()
+            val lastLngLat = LngLat(last.longitude, last.latitude)
+            val marker = currentMarker
+            if (marker == null) {
+                val newMarker = MTMarker(lastLngLat, android.graphics.Color.rgb(30, 136, 229))
+                style.addMarker(newMarker)
+                currentMarker = newMarker
+            } else {
+                marker.setCoordinates(lastLngLat, controller)
+            }
+
+            if (!hasCenteredOnLocation) {
+                controller.setZoom(16.0)
+                controller.setCenter(lastLngLat)
+                hasCenteredOnLocation = true
+            }
+
+            // Do not tear down and recreate the route layer on every 1 Hz GPS
+            // callback. That was causing visible map flicker and tile/style
+            // work while the user was moving. Redraw in small batches instead.
+            val shouldRenderRoute = route.size >= 2 &&
+                (lastRenderedRouteSize < 0 ||
+                    route.size - lastRenderedRouteSize >= ROUTE_REDRAW_EVERY_POINTS)
+
+            if (shouldRenderRoute) {
+                runCatching {
+                    style.removeLayerById(ROUTE_LAYER_ID)
+                    style.removeSourceById(ROUTE_SOURCE_ID)
+                }
+
                 val helper = style.polylineHelper()
                 helper.addPolyline(
                     MTPolylineLayerOptions(
@@ -137,33 +169,8 @@ fun NativeRouteMap(
                         lineOpacity = 1.0,
                     )
                 )
+                lastRenderedRouteSize = route.size
             }
-
-            if (route.isNotEmpty()) {
-                val last = route.last()
-                val lastLngLat = LngLat(last.longitude, last.latitude)
-                val marker = currentMarker
-
-                if (marker == null) {
-                    val newMarker = MTMarker(lastLngLat, android.graphics.Color.rgb(30, 136, 229))
-                    style.addMarker(newMarker)
-                    currentMarker = newMarker
-                } else {
-                    marker.setCoordinates(lastLngLat, controller)
-                }
-
-                if (!hasCenteredOnLocation) {
-                    controller.setZoom(16.0)
-                    controller.setCenter(lastLngLat)
-                    hasCenteredOnLocation = true
-                }
-            } else {
-                currentMarker?.let { style.removeMarker(it) }
-                currentMarker = null
-                hasCenteredOnLocation = false
-            }
-
-            renderedRouteKey = routeKey
         }
 
         Text(
